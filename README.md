@@ -4,21 +4,21 @@ A medical web application featuring a **Flask** API backend, a **PostgreSQL** da
 
 ---
 
-## 📂 Project Structure & File Guide
+##  Project Structure & File Guide
 
-### 🛠️ Project Configuration
+###  Project Configuration
 * **`pyproject.toml`** — Contains project metadata and dependency configurations.
 * **`uv.lock`** — Lockfile that records exact package versions for reproducible environments.
 * **`README.md`** — Overview documentation for this repository.
 
 ---
 
-### 🧠 `ml_experiments/`
+###  `ml_experiments/`
 * **`tensorflow_notebook/`** — Jupyter notebooks and scripts for training, testing, and prototyping TensorFlow machine learning models.
 
 ---
 
-### ⚙️ `backend/`
+###  `backend/`
 * **`app.py`** — The entry point that initializes and runs the Flask REST API server.
 * **`dbconnect.py`** — Database utility file handling connections to the PostgreSQL database.
 * **`routes/`** — Modular API route handlers:
@@ -28,7 +28,7 @@ A medical web application featuring a **Flask** API backend, a **PostgreSQL** da
 
 ---
 
-### 💻 `frontend/`
+### `frontend/`
 * **`login.py`** — Main entry point for the Streamlit dashboard handling initial authentication.
 * **`assets/`** — Static visual resources, including UI styling (CSS) and images.
 * **`pages/`** — Role-specific multi-page dashboards:
