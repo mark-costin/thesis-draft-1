@@ -19,7 +19,7 @@ A medical web application featuring a **Flask** API backend, a **PostgreSQL** da
 ---
 
 ###  `backend/`
-* **`app.py`** — The entry point that initializes and runs the Flask REST API server.
+* **`rest.py`** — The entry point that initializes and runs the Flask REST API server.
 * **`dbconnect.py`** — Database utility file handling connections to the PostgreSQL database.
 * **`routes/`** — Modular API route handlers:
   * **Auth:** User login and session verification.
