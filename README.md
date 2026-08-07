@@ -32,6 +32,6 @@ A medical web application featuring a **Flask** API backend, a **PostgreSQL** da
 * **`login.py`** — Main entry point for the Streamlit dashboard handling initial authentication.
 * **`assets/`** — Static visual resources, including UI styling (CSS) and images.
 * **`pages/`** — Role-specific multi-page dashboards:
-  * **`01_admin.py`** — Admin control panel for managing users and system data.
-  * **`02_doctor.py`** — Clinician workspace to view patient details and generate model predictions.
-  * **`03_patient.py`** — Portal for patients to access personal health records and results.
+  * **`adminpage.py`** — Admin control panel for managing users and system data.
+  * **`doctorpage.py`** — Clinician workspace to view patient details and generate model predictions.
+  * **`patientpage.py`** — Portal for patients to access personal health records and results.
