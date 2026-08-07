@@ -28,6 +28,7 @@ st.markdown("""
     }
     
     /* Center the Radio Buttons inside the box */
+
     div[role="radiogroup"] {
        justify-content: center !important;
        gap: 20px !important;
