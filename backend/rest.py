@@ -1,10 +1,28 @@
-from flask import Flask, jsonify
+import os
+from flask_cors import CORS
+from dbconnect import app
+from middleware.security import init_security_headers
+from routes.health import health_bp
 
-app = Flask(__name__)
+# 1. Enforce CORS Policy Restrictions
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "http://localhost:3000",
+            "http://localhost:8501",
+            "http://127.0.0.1:8501"
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-CSRF-Token", "Idempotency-Key", "X-Idempotency-Key"]
+    }
+})
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "healthy", "message": "Flask backend is up and running!"}), 200
+# 2. Attach Web Defense Headers
+init_security_headers(app)
 
-if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5000, debug=True)
+# 3. Register API Blueprints
+app.register_blueprint(health_bp)
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
