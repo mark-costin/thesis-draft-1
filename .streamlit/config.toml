@@ -1,0 +1,8 @@
+[theme]
+# This changes the native theme to your custom teal color!
+primaryColor = "#007979"
+
+# This forces the app to stay in Light Mode permanently
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#31333F"
