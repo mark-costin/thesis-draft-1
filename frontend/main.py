@@ -1,7 +1,7 @@
 import streamlit as st
 
 # 1. Page Config
-st.set_page_config("Preventive Care Portal", "🏥", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config("Lucerna", "🏥", layout="wide", initial_sidebar_state="collapsed")
 
 # 2. Session State Initialization
 for key, val in [("authenticated", False), ("user_role", None), ("jwt_token", None), ("user_id", None)]:

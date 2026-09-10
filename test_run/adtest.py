@@ -5,50 +5,24 @@ import re
 from datetime import datetime
 
 # ==============================================================================
-# PAGE CONFIGURATION & STATE INITIALIZATION
+# PAGE CONFIGURATION
 # ==============================================================================
 st.set_page_config(layout="wide")
 
+# ==============================================================================
+# PROFILE / USER VARIABLES (Ready for DB integration)
+# ==============================================================================
 user_avatar_url = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
 user_role = "ADMIN"
 user_name = "First Name"
 user_email = "admin.system@lucernamedica.com"
 
 # ==============================================================================
-# CALLBACKS & VALIDATION HELPERS
-# ==============================================================================
-def clean_alpha_input(key: str):
-    """Instantly strips numbers and symbols, leaving only letters, spaces, and hyphens."""
-    raw_val = st.session_state.get(key, "")
-    st.session_state[f"{key}_invalid"] = bool(re.search(r"[^A-Za-z\s\-]", raw_val))
-    st.session_state[key] = re.sub(r"[^A-Za-z\s\-]", "", raw_val)
-
-def format_phone_number(key: str):
-    """Instantly formats input into a 09XX-XXX-XXXX string."""
-    digits = "".join(filter(str.isdigit, st.session_state.get(key, "")))[:11]
-    formatted = digits[:4] + ("-" + digits[4:7] if len(digits) > 4 else "") + ("-" + digits[7:11] if len(digits) > 7 else "")
-    st.session_state[key] = formatted
-
-def clean_prc_license(key: str):
-    """Instantly strips letters and caps input at 7 digits."""
-    raw_val = st.session_state.get(key, "")
-    st.session_state[f"{key}_invalid"] = bool(re.search(r"[^0-9]", raw_val))
-    st.session_state[key] = "".join(filter(str.isdigit, raw_val))[:7]
-
-def is_valid_phone_format(text: str) -> bool:
-    return bool(re.match(r"^\d{4}-\d{3}-\d{4}$", text.strip()))
-
-def is_valid_gmail(text: str) -> bool:
-    return bool(re.match(r"^[a-zA-Z0-9._%+-]+@gmail\.com$", text.strip()))
-
-# ==============================================================================
-# DASHBOARD CSS STYLING
+# DASHBOARD & HEADER CSS STYLING
 # ==============================================================================
 st.markdown(f"""
     <style>
-    /* Hide input instruction hints */
-    [data-testid*="stInputInstructions"] {{ display: none !important; }}
-    
+    /* Global Theming & Tabs */
     [data-testid="baseButton-secondary"]:hover, 
     [data-testid="baseButton-secondary"]:focus, 
     [data-testid="baseButton-secondary"]:active {{ 
@@ -61,32 +35,12 @@ st.markdown(f"""
     [aria-selected="true"] * {{ color: #007979 !important; }}
     [data-baseweb="tab-highlight"] {{ background-color: #007979 !important; height: 3px !important; }}
 
-    /* Target ONLY header secondary buttons (prevents overwriting primary submit button) */
-    div[data-testid="stVerticalBlock"] > div > div > div > div > button[data-testid="baseButton-secondary"] {{
+    /* --- PROFILE POPOVER & HEADER BUTTON FIXES --- */
+    div[data-testid="stVerticalBlock"] > div > div > div > div > button {{
         height: 52px !important;
         border-radius: 8px !important;
         border: 1px solid #d0d7de !important;
         background-color: white !important;
-    }}
-
-    /* Make Primary Submit button clearly visible */
-    button[data-testid="baseButton-primary"] {{
-        background-color: #007979 !important;
-        color: #ffffff !important;
-        border: none !important;
-        font-weight: 700 !important;
-        height: 48px !important;
-        border-radius: 8px !important;
-    }}
-    button[data-testid="baseButton-primary"]:hover {{
-        background-color: #005f5f !important;
-        color: #ffffff !important;
-    }}
-
-    /* Disable typing cursor inside selectbox dropdowns to make them click-only */
-    div[data-testid="stSelectbox"] input {{
-        caret-color: transparent !important;
-        cursor: pointer !important;
     }}
     
     div[data-testid="stPopover"] > button {{
@@ -97,6 +51,7 @@ st.markdown(f"""
         height: 52px !important;
     }}
     
+    /* Target the icon container, hide emoji, and apply avatar image */
     div[data-testid="stPopover"] > button [data-testid="stIconEmoji"] {{
         display: inline-block !important;
         width: 38px !important;
@@ -127,6 +82,7 @@ st.markdown(f"""
         font-weight: 800 !important;
     }}
 
+    /* --- DASHBOARD METRIC CARDS --- */
     .metric-card {{
         background-color: #ffffff;
         border: 1px solid #e0e4e8;
@@ -138,56 +94,56 @@ st.markdown(f"""
         justify-content: flex-start;
         width: 100%;
     }}
+    
     .big-card {{ height: 230px; }}
     .left-small {{ height: 160px; }}
     .right-small {{ height: 195px; }}
+
     .b-num {{ font-size: 6rem; font-weight: 800; color: #111; line-height: 1; margin-bottom: 8px; }}
     .b-lbl {{ font-size: 1.6rem; font-weight: 600; color: #444; margin-top: auto; }}
     .s-num {{ font-size: 3.4rem; font-weight: 800; color: #111; line-height: 1; margin-bottom: 12px; }}
     .s-lbl {{ font-size: 1.15rem; font-weight: 500; color: #666; margin-top: auto; }}
+    
+    /* Custom Legend UI */
+    .status-legend {{
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+        padding: 12px;
+        margin-top: 10px;
+        border: 1px solid #e0e4e8;
+        border-radius: 8px;
+        background: #ffffff;
+    }}
+    .status-legend div {{
+        display: flex;
+        align-items: center;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #444;
+    }}
+    .dot {{
+        height: 12px;
+        width: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# MAIN APP LAYOUT & GLOBALS
+# MAIN APP LAYOUT (10 | 80 | 10)
 # ==============================================================================
-SPECIALIZATION_OPTIONS = ["General Physician", "Internal Medicine", "Cardiology", "Pulmonology", "Psychiatry"]
-SUFFIX_OPTIONS = ["None", "MD", "PhD", "DO", "MD, PhD", "Jr.", "Sr.", "III"]
-RELATION_OPTIONS = ["Mother", "Father", "Spouse", "Son", "Daughter", "Brother", "Sister", "Other"]
-
-# Initialize Form Keys
-for key in [
-    "doc_first_name", "doc_middle_name", "doc_last_name", "doc_address",
-    "doc_affiliation", "doc_prc", "doc_email", "doc_contact", "em_name", "em_contact"
-]:
-    if key not in st.session_state:
-        st.session_state[key] = ""
-
-if "form_success" not in st.session_state:
-    st.session_state.form_success = None
-
-if "doctor_directory" not in st.session_state:
-    st.session_state.doctor_directory = [
-        {"doctor_id": 1, "name": "Smith, John M.", "license_number": "PRC 1234567", "specialization": "General Physician", "email": "doc.smith@gmail.com", "contact_number": "0917-123-4567", "hospital_affiliation": "Lucerna Central", "is_verified": True, "failed_attempts": 0, "is_locked": False, "mfa_enrolled": True, "token_version": 1},
-        {"doctor_id": 2, "name": "Velasco, Maria A.", "license_number": "PRC 8839210", "specialization": "Cardiology", "email": "m.velasco@gmail.com", "contact_number": "0920-987-6543", "hospital_affiliation": "Heart Center", "is_verified": False, "failed_attempts": 4, "is_locked": True, "mfa_enrolled": False, "token_version": 3}
-    ]
-
-# Non-Clinical IAM Security Audit Trail
-if "doctor_audit_logs" not in st.session_state:
-    st.session_state.doctor_audit_logs = []
-
-count_admins = 1
-count_patients = 1
-count_doctors = len(st.session_state.doctor_directory)
-count_verified_docs = sum(1 for d in st.session_state.doctor_directory if d.get("is_verified", False))
-
 _, col_main, _ = st.columns([10, 80, 10])
 
 with col_main:
-    # --- HEADER ---
+    # --- TOP HEADER ROW ---
     header_col, action_col = st.columns([3, 1.2], vertical_alignment="bottom")
+
     with header_col:
         st.markdown("<h3 style='margin-bottom:0; padding-bottom:0;'>Welcome Admin!</h3>", unsafe_allow_html=True)
+
     with action_col:
         col_icon1, col_icon2, col_profile = st.columns([1, 1, 3])
         with col_icon1:
@@ -197,30 +153,38 @@ with col_main:
         with col_profile:
             with st.popover(f"**{user_role}**  \n{user_name}", icon="👤", use_container_width=True):
                 st.caption(user_email)
+                st.divider()
+                st.markdown("**Theme Preference**")
+                th_c1, th_c2 = st.columns(2)
+                th_c1.button("☀️ Light", use_container_width=True)
+                th_c2.button("🌙 Dark", use_container_width=True)
+                st.divider()
                 if st.button("⏻ Log Out", type="primary", use_container_width=True):
                     st.session_state.authenticated = False
                     st.rerun()
 
+    # --- MAIN TABS ---
     tab_metric, tab_form, tab_account = st.tabs(["METRIC", "FORM", "ACCOUNTS"])
 
     # --------------------------------------------------------------------------
-    # TAB 1: METRIC DASHBOARD
+    # TAB 1: METRICS DASHBOARD
     # --------------------------------------------------------------------------
     with tab_metric:
         st.write("") 
+
         # --- 1. SUMMARY METRIC CARDS (TOP) ---
         with st.container(border=True):
             st.markdown("<div style='margin-top: 35px;'></div>", unsafe_allow_html=True)   
 
             col_left, col_right = st.columns([1.5, 1], gap="large")
 
-            # Left Panel: System Aggregates
+            # Left Panel
             with col_left:
                 r1_left, = st.columns(1)
                 with r1_left:
-                    st.markdown(f"""
+                    st.markdown("""
                     <div class="metric-card big-card">
-                        <div class="b-num">{count_admins + count_patients + count_doctors}</div>
+                        <div class="b-num">0</div>
                         <div class="b-lbl">Total accounts</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -229,9 +193,9 @@ with col_main:
 
                 r2_left1, r2_left2 = st.columns(2, gap="large")
                 with r2_left1:
-                    st.markdown(f"""
+                    st.markdown("""
                     <div class="metric-card left-small">
-                        <div class="s-num">{count_admins + count_patients + count_verified_docs}</div>
+                        <div class="s-num">0</div>
                         <div class="s-lbl">Active Users</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -243,35 +207,37 @@ with col_main:
                     </div>
                     """, unsafe_allow_html=True)
 
-            # Right Panel: Role Breakdowns
+            # Right Panel
             with col_right:
                 r1_right1, r1_right2 = st.columns(2, gap="large")
                 with r1_right1:
-                    st.markdown(f"""
+                    st.markdown("""
                     <div class="metric-card right-small">
-                        <div class="s-num">{count_doctors}</div>
+                        <div class="s-num">0</div>
                         <div class="s-lbl">Doctors</div>
                     </div>
                     """, unsafe_allow_html=True)
                 with r1_right2:
-                    st.markdown(f"""
+                    st.markdown("""
                     <div class="metric-card right-small">
-                        <div class="s-num">{count_admins}</div>
+                        <div class="s-num">0</div>
                         <div class="s-lbl">Admins</div>
                     </div>
                     """, unsafe_allow_html=True)
 
                 st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
 
-                r2_right1, _ = st.columns(2, gap="large")
+                r2_right1, r2_right2 = st.columns(2, gap="large")
                 with r2_right1:
-                    st.markdown(f"""
+                    st.markdown("""
                     <div class="metric-card right-small">
-                        <div class="s-num">{count_patients}</div>
+                        <div class="s-num">0</div>
                         <div class="s-lbl">Patients</div>
                     </div>
                     """, unsafe_allow_html=True)
-
+                with r2_right2:
+                    st.markdown("<div style='height: 195px; width: 100%; opacity: 0;'></div>", unsafe_allow_html=True)
+            
             st.markdown("<div style='margin-bottom: 50px;'></div>", unsafe_allow_html=True)    
 
         # --- 2. INTAKE ACTIVITY OVER TIME CHART (MIDDLE) ---
@@ -279,13 +245,15 @@ with col_main:
             st.markdown("##### **INTAKE ACTIVITY OVER TIME**")
             st.caption("Activity tracking for Patients, Doctors, and Admin's accounts")
 
-            chart_data = pd.DataFrame(
-                {"Patients": [0, 0, 20, 0, 0, 0, 0], "Doctors": [10, 0, 200, 0, 300, 30, 0], "Admins": [10, 0, 0, 300, 0, 0, 0]},
-                index=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-            )
+            chart_data = pd.DataFrame({
+                "Patients": [0, 0, 20, 0, 0, 0, 0],
+                "Doctors": [10, 0, 200, 0, 300, 30, 0],
+                "Admins": [10, 0, 0, 300, 0, 0, 0]
+            }, index=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+
             st.line_chart(chart_data, height=350, use_container_width=True)
 
-        # --- 3. CONNECTION POOL & CLUSTER MONITOR (RESTORED) ---
+        # --- 3. CONNECTION POOL & CLUSTER MONITOR (BOTTOM) ---
         with st.container(border=True):
             current_date = datetime.now().strftime("%m/%d/%Y")
             st.markdown(f"<div style='text-align: right; color: #666; font-size: 0.9rem; margin-bottom: -15px;'>Last Updated: {current_date}</div>", unsafe_allow_html=True)
@@ -310,13 +278,13 @@ with col_main:
                     load_color = "#e10123"
 
                 fig = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=active_conn,
-                    number={
+                    mode = "gauge+number",
+                    value = active_conn,
+                    number = {
                         'suffix': f" / {max_conn}", 
                         'font': {'size': 36, 'color': '#111827'}
                     },
-                    title={
+                    title = {
                         'text': (
                             f"<b>Active Connections</b><br>"
                             f"<span style='font-size:14px; color:#6b7280;'>Utilization: {utilization_pct}%</span> • "
@@ -324,7 +292,7 @@ with col_main:
                         ),
                         'font': {'size': 18, 'color': '#1f2937'}
                     },
-                    gauge={
+                    gauge = {
                         'axis': {
                             'range': [0, max_conn], 
                             'tickmode': 'linear',
@@ -417,7 +385,7 @@ with col_main:
                 </div>
                 """, unsafe_allow_html=True)
 
-        # --- 4. SECURITY & GATEWAY TELEMETRY (RESTORED 2x2 GRID) ---
+        # --- 4. SECURITY & GATEWAY TELEMETRY (2x2 GRID) ---
         grid_row1_col1, grid_row1_col2 = st.columns(2, gap="large")
 
         # Card 1: PostgreSQL Engine Health
@@ -554,201 +522,182 @@ with col_main:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
     # --------------------------------------------------------------------------
     # TAB 2: PROVISIONING FORM & CLINICIAN DIRECTORY
     # --------------------------------------------------------------------------
     with tab_form:
-        # Reset form keys before widgets render to prevent StreamlitAPIException
-        if st.session_state.get("trigger_form_clear"):
-            keys_to_clear = [
-                "doc_first_name", "doc_middle_name", "doc_last_name", "doc_address",
-                "doc_prc", "doc_email", "doc_contact", "em_name", "em_contact", "doc_affiliation"
+        SPECIALIZATION_OPTIONS = [
+            "General Physician",
+            "Internal Medicine",
+            "Cardiology",
+            "Pulmonology",
+            "Psychiatry",
+        ]
+
+        if "doctor_directory" not in st.session_state:
+            st.session_state.doctor_directory = [
+                {
+                    "doctor_id": 1,
+                    "name": "Smith, John M.",
+                    "license_number": "PRC-123456",
+                    "specialization": "General Practice",
+                    "email": "doc.smith@hospital.com",
+                    "contact_number": "09171234567",
+                    "hospital_affiliation": "Lucerna Central Hospital",
+                    "is_verified": True
+                },
+                {
+                    "doctor_id": 2,
+                    "name": "Velasco, Maria A.",
+                    "license_number": "PRC-883921",
+                    "specialization": "Cardiology",
+                    "email": "m.velasco@cardio.med",
+                    "contact_number": "09209876543",
+                    "hospital_affiliation": "Metropolitan Heart Center",
+                    "is_verified": False
+                }
             ]
-            for key in keys_to_clear:
-                st.session_state[key] = ""
-                st.session_state[f"{key}_invalid"] = False
-            st.session_state.trigger_form_clear = False
 
-        st.markdown("""
-        <div style="margin-bottom: 20px;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.6rem; line-height: 1;">🩺</span>
-                <h3 style="margin: 0; font-size: 1.45rem; font-weight: 700; color: #1e293b; letter-spacing: -0.3px;">Provision Clinician Account</h3>
-            </div>
-            <p style="margin: 6px 0 16px 0; font-size: 0.92rem; color: #64748b;">Create a verified practitioner profile and register login credentials in the system.</p>
-            <div style="height: 1px; width: 100%; background-color: #e2e8f0;"></div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        if st.session_state.form_success:
-            st.success(st.session_state.form_success)
-            st.session_state.form_success = None
-
+        # --- PART 1: DOCTOR PROVISIONING FORM ---
         with st.container(border=True):
-            first_name = st.text_input("FIRST NAME*", placeholder="Enter first name", key="doc_first_name", on_change=clean_alpha_input, args=("doc_first_name",))
-            if st.session_state.get("doc_first_name_invalid"):
-                st.error("⛔ Only letters and spaces are permitted.")
-            
-            last_name = st.text_input("LAST NAME*", placeholder="Enter last name", key="doc_last_name", on_change=clean_alpha_input, args=("doc_last_name",))
-            if st.session_state.get("doc_last_name_invalid"):
-                st.error("⛔ Only letters and spaces are permitted.")
+            st.markdown("### 🩺 Provision Clinician Account")
+            st.caption("Create a verified practitioner profile and register login credentials in the system.")
 
-            row3_col1, row3_col2 = st.columns([1, 3])
-            with row3_col1:
-                middle_name = st.text_input("MIDDLE NAME", placeholder="Optional", key="doc_middle_name", on_change=clean_alpha_input, args=("doc_middle_name",))
-                if st.session_state.get("doc_middle_name_invalid"):
-                    st.error("⛔ Only letters permitted.")
-            with row3_col2:
-                address = st.text_input("ADDRESS*", placeholder="Residential or clinic address", key="doc_address")
+            with st.form(key="doctor_provision_form", clear_on_submit=True):
+                # Section A: Clinician Identity (Row 1)
+                st.markdown("##### **Clinician Identity**")
+                col_f_name, col_m_name, col_l_name, col_suffix = st.columns([2.5, 2, 2.5, 1.2])
 
-            row4_col1, row4_col2, row4_col3, row4_col4 = st.columns([1.5, 2, 1.3, 1])
-            with row4_col1:
-                specialization = st.selectbox("SPECIALIZATION*", options=SPECIALIZATION_OPTIONS)
-            with row4_col2:
-                hospital_affiliation = st.text_input("CLINIC AFFILIATION", placeholder="e.g., Manila Doctors Hospital", key="doc_affiliation")
-            with row4_col3:
-                prc_license_raw = st.text_input("PRC LICENSE*", placeholder="7 digits only", max_chars=7, key="doc_prc", on_change=clean_prc_license, args=("doc_prc",))
-                if st.session_state.get("doc_prc_invalid"):
-                    st.error("⛔ Digits only.")
-            with row4_col4:
-                suffix = st.selectbox("SUFFIX*", options=SUFFIX_OPTIONS)
+                with col_f_name:
+                    first_name = st.text_input("First Name *", placeholder="e.g., Jonathan", max_chars=50)
+                with col_m_name:
+                    middle_name = st.text_input("Middle Name", placeholder="e.g., Arthur", max_chars=50)
+                with col_l_name:
+                    last_name = st.text_input("Last Name *", placeholder="e.g., Reyes", max_chars=50)
+                with col_suffix:
+                    suffix = st.selectbox("Suffix", options=["None", "MD", "DO", "PhD", "Jr.", "Sr."])
 
-            row5_col1, row5_col2 = st.columns([1.5, 1.5])
-            with row5_col1:
-                email = st.text_input("EMAIL*", placeholder="strictly @gmail.com", key="doc_email")
-                if email and not is_valid_gmail(email):
-                    st.error("⛔ Must be a valid Gmail address.")
-            with row5_col2:
-                contact_number = st.text_input("CONTACT NUMBER*", placeholder="09XX-XXX-XXXX", max_chars=13, key="doc_contact", on_change=format_phone_number, args=("doc_contact",))
-                doc_digits = "".join(filter(str.isdigit, contact_number))
-                if contact_number and len(doc_digits) < 11:
-                    st.error(f"⛔ Incomplete ({len(doc_digits)}/11 digits typed).")
+                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
-            st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
+                # Section B: Professional Credentials (Row 2)
+                st.markdown("##### **Professional Credentials**")
+                col_lic, col_spec, col_affil = st.columns([1.8, 2, 2.2])
 
-            st.markdown("#### **CONTACT IN CASE OF EMERGENCY**")
-            emergency_name = st.text_input("FULL NAME*", placeholder="Enter emergency contact's full name", key="em_name", on_change=clean_alpha_input, args=("em_name",))
-            if st.session_state.get("em_name_invalid"):
-                st.error("⛔ Only letters permitted.")
-            
-            emergency_contact = st.text_input("CONTACT NUMBER*", placeholder="09XX-XXX-XXXX", max_chars=13, key="em_contact", on_change=format_phone_number, args=("em_contact",))
-            em_digits = "".join(filter(str.isdigit, emergency_contact))
-            if emergency_contact and len(em_digits) < 11:
-                st.error(f"⛔ Incomplete ({len(em_digits)}/11 digits typed).")
-            
-            emergency_relation = st.selectbox("RELATION*", options=RELATION_OPTIONS)
+                with col_lic:
+                    license_number = st.text_input("PRC / Medical License # *", placeholder="e.g., PRC-0098412", max_chars=50)
+                with col_spec:
+                    specialization = st.selectbox("Specialization *", options=SPECIALIZATION_OPTIONS)
+                with col_affil:
+                    hospital_affiliation = st.text_input("Hospital / Clinic Affiliation", value="Lucerna Medica Main Clinic", max_chars=150)
 
-            st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
-            # --- CREDENTIAL DISPATCH & SECURITY ONBOARDING CONTROLS ---
-            st.markdown("#### **CREDENTIAL DISPATCH & SECURITY CONTROLS**")
-            col_sec1, col_sec2, col_sec3 = st.columns([1.5, 1.5, 1.2])
-            with col_sec1:
-                send_email_toggle = st.toggle("Automated Onboarding Email", value=True, help="Dispatches temporary login credentials and institutional portal link.")
-            with col_sec2:
-                require_mfa_toggle = st.toggle("Enforce MFA on First Login", value=True, help="Requires TOTP Authenticator binding before patient charts can be viewed.")
-            with col_sec3:
-                cred_ttl = st.selectbox("Credential TTL", options=["24 Hours", "48 Hours", "7 Days"], index=0, help="Lifespan of initial temporary password.")
+                # Section C: Contact & Access Privileges (Row 3)
+                st.markdown("##### **Contact & Account Privileges**")
+                col_email, col_phone, col_verify = st.columns([2.2, 1.8, 1.5], vertical_alignment="center")
 
-            st.divider()
-            submit_btn = st.button("Submit Provisioning", type="primary", use_container_width=True)
+                with col_email:
+                    email = st.text_input("Institutional Email *", placeholder="doctor@lucernamedica.com", max_chars=100)
+                with col_phone:
+                    contact_number = st.text_input("Contact Number *", placeholder="e.g., 09171234567", max_chars=15)
+                with col_verify:
+                    is_verified = st.toggle("Instant Verification", value=True, help="Active accounts receive immediate system access. Uncheck to mark as Pending background check.")
 
-        if submit_btn:
-            errors = []
-        if submit_btn:
-            errors = []
-            if not first_name.strip():
-                errors.append("First Name is required.")
-            if not last_name.strip():
-                errors.append("Last Name is required.")
-            if not address.strip():
-                errors.append("Address is required.")
-            if len(prc_license_raw) != 7:
-                errors.append("PRC License must be exactly 7 digits.")
-            if not is_valid_gmail(email):
-                errors.append("Valid Gmail address is required.")
-            if not is_valid_phone_format(contact_number):
-                errors.append("Doctor Contact Number must be exactly 11 digits.")
-            if not emergency_name.strip():
-                errors.append("Emergency Contact Name is required.")
-            if not is_valid_phone_format(emergency_contact):
-                errors.append("Emergency Contact Number must be exactly 11 digits.")
-            
-            formatted_prc = f"PRC {prc_license_raw.strip()}"
-            if any(doc["license_number"] == formatted_prc for doc in st.session_state.doctor_directory):
-                errors.append(f"License Conflict: `{formatted_prc}` is already registered.")
+                st.divider()
 
-            if errors:
-                for err in errors:
-                    st.error(f"❌ {err}")
-            else:
-                middle_init = f" {middle_name.strip().title()[0]}." if middle_name.strip() else ""
-                formatted_full_name = f"{last_name.strip().title()}, {first_name.strip().title()}{middle_init}"
+                # Auto-generated preview metadata
+                cleaned_last_name = re.sub(r'[^a-zA-Z0-9]', '', last_name.lower()) if last_name else "lastname"
+                suggested_username = f"doc_{cleaned_last_name}"
+                st.caption(f"**Auto-Generated User Handle:** `{suggested_username}` • **Assigned Role:** `DOCTOR`")
+
+                col_spacer, col_submit = st.columns([3.5, 1.5])
+                with col_submit:
+                    submit_btn = st.form_submit_button(
+                        label="Provision Clinician", 
+                        type="primary", 
+                        use_container_width=True
+                    )
+
+            # --- Form Submission Handling ---
+            if submit_btn:
+                required_fields = [first_name.strip(), last_name.strip(), license_number.strip(), email.strip(), contact_number.strip()]
                 
-                # Update Clinician Directory
-                st.session_state.doctor_directory.append({
-                    "doctor_id": len(st.session_state.doctor_directory) + 1,
-                    "name": formatted_full_name,
-                    "license_number": formatted_prc,
-                    "specialization": specialization,
-                    "email": email.strip().lower(),
-                    "contact_number": contact_number,
-                    "hospital_affiliation": hospital_affiliation.strip() or "Lucerna Medica Main Clinic",
-                    "is_verified": True,
-                    "failed_attempts": 0,
-                    "is_locked": False,
-                    "mfa_enrolled": False,
-                    "token_version": 1
-                })
+                if not all(required_fields):
+                    st.error("Please complete all required fields marked with an asterisk (*).")
+                elif not re.match(r"[^@]+@[^@]+\.[^@]+", email.strip()):
+                    st.error("Please enter a valid institutional email address.")
+                elif any(doc["license_number"] == license_number.strip() for doc in st.session_state.doctor_directory):
+                    st.error(f"License Conflict: `{license_number.strip()}` is already registered to an existing clinician.")
+                else:
+                    payload = {
+                        "first_name": first_name.strip(),
+                        "middle_name": middle_name.strip() or None,
+                        "last_name": last_name.strip(),
+                        "suffix": None if suffix == "None" else suffix,
+                        "license_number": license_number.strip(),
+                        "specialization": specialization,
+                        "hospital_affiliation": hospital_affiliation.strip() or None,
+                        "email": email.strip(),
+                        "contact_number": contact_number.strip(),
+                        "is_verified": is_verified,
+                        "role": "DOCTOR"
+                    }
 
-                # Append IAM Audit Log
-                st.session_state.doctor_audit_logs.insert(0, {
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "target_doctor": formatted_full_name,
-                    "event_type": "ACCOUNT_PROVISIONED",
-                    "actor": f"Admin ({user_email})",
-                    "ip_address": "127.0.0.1",
-                    "details": f"TTL: {cred_ttl} | Email Dispatched: {send_email_toggle} | MFA Required: {require_mfa_toggle}"
-                })
+                    middle_init = f" {middle_name.strip()[0]}." if middle_name.strip() else ""
+                    formatted_name = f"{last_name.strip()}, {first_name.strip()}{middle_init}"
+                    
+                    st.session_state.doctor_directory.append({
+                        "doctor_id": len(st.session_state.doctor_directory) + 1,
+                        "name": formatted_name,
+                        "license_number": license_number.strip(),
+                        "specialization": specialization,
+                        "email": email.strip(),
+                        "contact_number": contact_number.strip(),
+                        "hospital_affiliation": hospital_affiliation.strip(),
+                        "is_verified": is_verified
+                    })
+                    
+                    st.success(f"Successfully provisioned **Dr. {first_name.strip()} {last_name.strip()}** (`{suggested_username}`).")
+                    st.rerun()
 
-                st.session_state.trigger_form_clear = True
-                # ... (rest of your success and rerun logic)
+        st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
 
-       # ======================================================================
-        # PART 2: SEARCHABLE CLINICIAN DATABASE & DIRECTORY
-        # ======================================================================
+        # --- PART 2: SEARCHABLE DOCTOR DIRECTORY ---
         with st.container(border=True):
-            st.markdown("### 📋 Clinician Database & Directory")
+            st.markdown("### 📋 Clinician Directory")
             st.caption("Inspect, filter, and manage provisioned clinical accounts.")
-            
+
             raw_df = pd.DataFrame(st.session_state.doctor_directory)
 
             if not raw_df.empty:
                 f_col_search, f_col_spec, f_col_status = st.columns([2.5, 2, 1.5])
-                
+
                 with f_col_search:
                     search_query = st.text_input(
                         "Search Clinician", 
                         placeholder="Search by name, license #, or email...", 
                         label_visibility="collapsed"
                     )
+
                 with f_col_spec:
                     selected_specialties = st.multiselect(
-                        "Filter by Specialization", 
-                        options=SPECIALIZATION_OPTIONS, 
-                        placeholder="All Specialties", 
+                        "Filter by Specialization",
+                        options=SPECIALIZATION_OPTIONS,
+                        placeholder="All Specialties",
                         label_visibility="collapsed"
                     )
+
                 with f_col_status:
                     status_filter = st.radio(
-                        "Status Filter", 
-                        options=["All", "Verified", "Pending"], 
-                        horizontal=True, 
+                        "Status Filter",
+                        options=["All", "Verified", "Pending"],
+                        horizontal=True,
                         label_visibility="collapsed"
                     )
 
                 filtered_df = raw_df.copy()
-                
+
                 if search_query:
                     query = search_query.lower()
                     filtered_df = filtered_df[
@@ -756,22 +705,32 @@ with col_main:
                         filtered_df["license_number"].str.lower().str.contains(query) |
                         filtered_df["email"].str.lower().str.contains(query)
                     ]
-                
+
                 if selected_specialties:
                     filtered_df = filtered_df[filtered_df["specialization"].isin(selected_specialties)]
-                
+
                 if status_filter == "Verified":
                     filtered_df = filtered_df[filtered_df["is_verified"] == True]
                 elif status_filter == "Pending":
                     filtered_df = filtered_df[filtered_df["is_verified"] == False]
 
                 display_df = filtered_df.copy()
-                display_df["status_badge"] = display_df["is_verified"].apply(lambda v: "🟢 Verified" if v else "🟡 Pending")
-                display_df["lock_badge"] = display_df["is_locked"].apply(lambda l: "🔒 Locked" if l else "🟢 Normal")
+                display_df["status_badge"] = display_df["is_verified"].apply(
+                    lambda v: "🟢 Verified" if v else "🟡 Pending"
+                )
 
                 st.dataframe(
-                    display_df[["name", "license_number", "specialization", "contact_number", "email", "hospital_affiliation", "status_badge", "lock_badge"]],
-                    use_container_width=True, hide_index=True,
+                    display_df[[
+                        "name", 
+                        "license_number", 
+                        "specialization", 
+                        "contact_number", 
+                        "email", 
+                        "hospital_affiliation", 
+                        "status_badge"
+                    ]],
+                    use_container_width=True,
+                    hide_index=True,
                     column_config={
                         "name": st.column_config.TextColumn("Clinician Name", width="medium"),
                         "license_number": st.column_config.TextColumn("License Number", width="small"),
@@ -779,61 +738,13 @@ with col_main:
                         "contact_number": st.column_config.TextColumn("Contact Phone", width="small"),
                         "email": st.column_config.TextColumn("Institutional Email", width="medium"),
                         "hospital_affiliation": st.column_config.TextColumn("Affiliation", width="medium"),
-                        "status_badge": st.column_config.TextColumn("Verification", width="small"),
-                        "lock_badge": st.column_config.TextColumn("Access State", width="small")
+                        "status_badge": st.column_config.TextColumn("Status", width="small")
                     },
-                    height=240
+                    height=280
                 )
-
-                st.divider()
-
-                # --- ACCOUNT GOVERNANCE ACTIONS PANEL ---
-                st.markdown("##### ⚙️ **Account Governance & Security Controls**")
-                doctor_options = {doc["doctor_id"]: f"{doc['name']} ({doc['license_number']})" for doc in st.session_state.doctor_directory}
-                selected_doc_id = st.selectbox("Select Clinician to Manage:", options=list(doctor_options.keys()), format_func=lambda x: doctor_options[x])
-                
-                target_doc = next((d for d in st.session_state.doctor_directory if d["doctor_id"] == selected_doc_id), None)
-
-                if target_doc:
-                    action_col1, action_col2, action_col3 = st.columns(3)
-                    
-                    with action_col1:
-                        st.markdown(f"**Failed Logins:** `{target_doc['failed_attempts']}/5`")
-                        if target_doc["is_locked"]:
-                            st.warning("⚠️ Account locked.")
-                            if st.button("🔓 Clear Lockout", use_container_width=True):
-                                target_doc["is_locked"] = False
-                                target_doc["failed_attempts"] = 0
-                                st.success(f"Unlocked account for {target_doc['name']}.")
-                                st.rerun()
-                        else:
-                            st.info("Account is in good standing.")
-
-                    with action_col2:
-                        st.markdown("**Credential Reset:**")
-                        if st.button("🔑 Dispatch Reset OTP", use_container_width=True):
-                            st.success(f"One-time reset dispatched to {target_doc['email']}.")
-
-                    with action_col3:
-                        st.markdown(f"**Session Version:** `v{target_doc['token_version']}`")
-                        if st.button("🛑 Revoke Active Sessions", use_container_width=True):
-                            target_doc["token_version"] += 1
-                            st.warning(f"All active bearer tokens invalidated for {target_doc['name']}.")
-                            st.rerun()
+                st.caption(f"Showing **{len(display_df)}** of **{len(raw_df)}** total registered clinicians.")
             else:
-                st.info("No clinician records found.")
-
-        st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
-
-        # --- NON-CLINICAL DOCTOR AUDIT LOGS ---
-        with st.container(border=True):
-            st.markdown("### 🛡️ Non-Clinical Identity & Security Audit Trail")
-            audit_df = pd.DataFrame(st.session_state.doctor_audit_logs)
-            if not audit_df.empty:
-                st.dataframe(audit_df, use_container_width=True, hide_index=True, height=240)
-            else:
-                st.info("No security audit events recorded.")
-                          
+                st.info("No clinician records found. Use the form above to provision the first account.")
 
     # --------------------------------------------------------------------------
     # TAB 3: ACCOUNT DIRECTORY

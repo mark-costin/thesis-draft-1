@@ -125,7 +125,7 @@ _, col_main, _ = st.columns([20, 60, 20])
 with col_main:
     with st.container(border=True):
         st.markdown(
-            "<h2 style='text-align:center; margin:0;'>Welcome to the Health Hub</h2>"
+            "<h2 style='text-align:center; margin:0;'>Welcome to the Lucerna Medica!</h2>"
             "<p style='text-align:center; color:#666; margin: 6px 0 16px 0;'>A simple, secure way for patients, doctors, and staff to stay connected.</p>",
             unsafe_allow_html=True,
         )
