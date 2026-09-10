@@ -1,0 +1,5 @@
+[33mff19526[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Merge branch 'main' of https://github.com/mark-costin/thesis-draft-1
+[33ma66f8d8[m chore: update test files and maintain repository state
+[33m49781d5[m Update README.md
+[33md08f675[m backend(api): configure db pooling, security headers, and idempotency layer
+[33m0a78024[m feat(db): establish PostgreSQL schema, seed script, and ORM model mappings
