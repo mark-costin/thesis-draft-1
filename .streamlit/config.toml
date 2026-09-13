@@ -1,8 +1,9 @@
 [theme]
-# This changes the native theme to your custom teal color!
+base = "light"
 primaryColor = "#007979"
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#1e293b"
 
-# This forces the app to stay in Light Mode permanently
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f0f2f6"
-textColor = "#31333F"
+[client]
+toolbarMode = "minimal"
