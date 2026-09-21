@@ -13,7 +13,7 @@ user_avatar_url = "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?aut
 
 # --- Core State Initialization (Synced with doctorpage.py) ---
 if "theme_mode" not in st.session_state: st.session_state.theme_mode = "light"
-if "active_patient" not in st.session_state: st.session_state.active_patient = None
+if "logged_in_patient_id" not in st.session_state: st.session_state.logged_in_patient_id = "PAT-9912"
 
 if "today_queue" not in st.session_state:
     st.session_state.today_queue = [
@@ -29,16 +29,9 @@ if "master_patients" not in st.session_state:
         {"id": "PAT-1102", "name": "Mason, Justin L.", "age": 65, "sex": "Male", "bmi": 26.8, "latest_bp": "125/80", "resting_hr": 68, "primary_cond": "COPD & Mild Cognitive Impairment", "prior_directive": "Continue inhaler regimen. Schedule follow-up pulmonary function test.", "active_rx": "Albuterol Inhaler PRN, Donepezil 5mg OD", "allergies": "None", "risk_flag": "Stable", "fam_history": ["Dementia (Father)", "Depression (Sister)"]},
     ]
 
-# Fallback Identity Initialization
-if not st.session_state.active_patient:
-    st.session_state.active_patient = st.session_state.master_patients[0]
-
-active_pat = st.session_state.active_patient
+# Resolve Active Authenticated Patient
+active_pat = next((p for p in st.session_state.master_patients if p["id"] == st.session_state.logged_in_patient_id), st.session_state.master_patients[0])
 pid = active_pat["id"]
-
-def set_patient():
-    selected_id = st.session_state.patient_switcher_dropdown.split(" ")[0]
-    st.session_state.active_patient = next((p for p in st.session_state.master_patients if p["id"] == selected_id), st.session_state.master_patients[0])
 
 # ==============================================================================
 # 2. MASTER DUAL-THEME ENGINE (Mirrored from Clinician Workspace)
@@ -90,28 +83,46 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 3. HEADER & LIVE CLINIC STATUS
+# 3. SIDEBAR EVALUATOR SANDBOX (THESIS DEMO MODE)
+# ==============================================================================
+with st.sidebar:
+    with st.expander("🛠️ Evaluator Sandbox (Demo Mode)", expanded=False):
+        st.caption("Simulate authentic patient logins across different chronic cohorts for thesis evaluation.")
+        pat_options_map = {f"{p['name']} ({p['id']})": p['id'] for p in st.session_state.master_patients}
+        current_selection_label = next((k for k, v in pat_options_map.items() if v == st.session_state.logged_in_patient_id), list(pat_options_map.keys())[0])
+        
+        selected_sandbox_pat = st.selectbox("Switch Active Patient", options=list(pat_options_map.keys()), index=list(pat_options_map.keys()).index(current_selection_label), key="sandbox_patient_selector")
+        st.session_state.logged_in_patient_id = pat_options_map[selected_sandbox_pat]
+        if st.button("🔄 Apply Account Switch", use_container_width=True):
+            st.rerun()
+
+# ==============================================================================
+# 4. TOP NAVIGATION HEADER & CLINIC STATUS CARD
 # ==============================================================================
 _, col_main, _ = st.columns([5, 90, 5], gap="small")
 
 with col_main:
-    # Top Navigation & Theme Switcher
+    # Top Bar Header
     with st.container(border=False):
         h1, h2 = st.columns([7, 3], vertical_alignment="center")
         with h1:
-            st.markdown(f"### Lucerna Medica Patient Portal &nbsp;|&nbsp; <span style='font-size: 1.15rem; color: #64748b;'>My Health Overview</span>", unsafe_allow_html=True)
+            st.markdown("### Lucerna Medica Patient Portal &nbsp;|&nbsp; <span style='font-size: 1.15rem; color: #64748b;'>My Health Overview</span>", unsafe_allow_html=True)
         with h2:
-            sc1, sc2 = st.columns([3, 1])
+            sc1, sc2 = st.columns([3, 1], vertical_alignment="center")
             with sc1:
-                pat_opts = [f"{p['id']} - {p['name']}" for p in st.session_state.master_patients]
-                curr_idx = pat_opts.index(f"{active_pat['id']} - {active_pat['name']}")
-                st.selectbox("Simulate Patient Login", options=pat_opts, index=curr_idx, key="patient_switcher_dropdown", on_change=set_patient, label_visibility="collapsed")
+                st.markdown(f"<div style='background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 12px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; text-align: center;'>🟢 {active_pat['name'].split(',')[0]} 👤</div>", unsafe_allow_html=True)
             with sc2:
                 with st.popover("⚙️"):
+                    st.markdown(f"**Signed in as:** `{pid}`")
+                    st.divider()
                     if st.button("Dark Mode", use_container_width=True, key=f"btn_dark_{pid}"): st.session_state.theme_mode = "dark"; st.rerun()
-                    if st.button("Light Mode", use_container_width=True, key=f"btn_light_{pid}"): st.session_state.theme_mode = "light"; st.rerun()
+                    if st.button("Light Mode", use_container_width=True, key=f"btn_light_{pid} ):"): st.session_state.theme_mode = "light"; st.rerun()
+                    st.divider()
+                    if st.button("🚪 Log Out", use_container_width=True, key=f"btn_logout_{pid}"):
+                        st.session_state.logged_in_patient_id = "PAT-9912"
+                        st.rerun()
 
-    # Demographic Card & Live Queue Status
+    # Welcome Card & Live Clinic Status
     with st.container(border=True):
         st.markdown(f"## Welcome back, {active_pat['name'].split(',')[1].strip()} 👋")
         
@@ -120,16 +131,13 @@ with col_main:
         d2.metric("Chronological Age", f"{active_pat['age']} Yrs")
         d3.metric("Biological Sex", active_pat["sex"])
         
-        # Check active queue status
         in_queue = next((q for q in st.session_state.today_queue if q["id"] == pid), None)
         with d4:
             st.markdown("<div style='font-size: 0.85rem; font-weight: 600; color: #64748b; margin-bottom: 4px;'>Live Clinic Status</div>", unsafe_allow_html=True)
             if in_queue:
-                q_num = in_queue['queue_no']
-                q_stat = in_queue['lifecycle_status']
-                st.markdown(f"<div style='background:#d1fae5; color:#059669; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.95rem;'>🎫 Ticket: {q_num} · {q_stat} · Est. Wait: 12m</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background:#d1fae5; color:#059669; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.9rem;'>🎫 Ticket: {in_queue['queue_no']} · {in_queue['lifecycle_status']}</div>", unsafe_allow_html=True)
             else:
-                st.markdown("<div style='background:rgba(148, 163, 184, 0.1); color:#64748b; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.95rem;'>⚪ Not Currently Checked In</div>", unsafe_allow_html=True)
+                st.markdown("<div style='background:rgba(148, 163, 184, 0.1); color:#64748b; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.9rem;'>⚪ Not Currently Checked In</div>", unsafe_allow_html=True)
 
         st.markdown("<hr style='margin: 16px 0; border-color: rgba(148, 163, 184, 0.2);'>", unsafe_allow_html=True)
         st.markdown(f"""
@@ -140,12 +148,12 @@ with col_main:
         """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 4. TABBED INTERFACE
+    # 5. FOUR-TAB ARCHITECTURE
     # ==============================================================================
     tab_care, tab_vitals, tab_checkin, tab_family = st.tabs(["My Care Plan", "Vitals Log & History", "Pre-Visit Check-In", "Family Tree & Hereditary"])
 
     # --------------------------------------------------------------------------
-    # TAB 1: MY CARE PLAN
+    # TAB 1: MY CARE PLAN & DOCTOR'S DIRECTIVES
     # --------------------------------------------------------------------------
     with tab_care:
         st.write("")
@@ -155,13 +163,13 @@ with col_main:
             st.info(f"**Latest Entry (Dr. Velasco):** {active_pat['prior_directive']}")
             
         with st.container(border=True):
-            st.markdown("### 💊 Interactive Medication Cabinet & Adherence")
+            st.markdown("### 💊 Medication Cabinet & Adherence Tracker")
             st.caption("Mark your daily doses as taken to log adherence in your clinical record.")
             
             meds = [m.strip() for m in active_pat.get("active_rx", "").split(",") if m.strip()]
             if meds:
                 for i, med in enumerate(meds):
-                    st.checkbox(f"✅ I have taken **{med}** today.", key=f"med_{i}_{pid}")
+                    st.checkbox(f"✅ I have taken **{med}** today.", key=f"rx_dose_{i}_{pid}")
             else:
                 st.markdown("No active prescriptions recorded.")
                 
@@ -170,19 +178,19 @@ with col_main:
                 st.markdown(f"<div style='background:#fee2e2; color:#ef4444; border-left: 4px solid #ef4444; padding:10px 14px; border-radius:4px; font-weight:600; font-size:0.9rem;'>⚠️ Confirmed Allergies: {active_pat['allergies']}</div>", unsafe_allow_html=True)
 
         with st.container(border=True):
-            st.markdown("### 🤖 Plain-Language AI Diagnostic Insights")
+            st.markdown("### 🤖 Plain-Language AI Diagnostic Summary")
             if "High Risk" in active_pat["risk_flag"]:
-                st.markdown(f"""
+                st.markdown("""
                 <div style="font-size: 0.95rem; line-height: 1.6;">
                     Based on your latest clinical readings, your AI risk indicator is currently <b>Elevated</b>. 
                     <br><br>
-                    <b>What this means:</b> Some of your baseline markers (such as your blood pressure or glycemic indices) are running higher than your personal target zone. This is common and manageable.
+                    <b>What this means:</b> Some of your baseline markers (such as your blood pressure or glycemic indices) are running higher than your personal target zone. This is common and manageable with proper tracking.
                     <br><br>
                     <b>Action Plan:</b> Please ensure strict adherence to your medication cabinet above, prioritize low-sodium/low-glycemic meals, and complete your daily vitals log so Dr. Velasco can review your trends.
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                st.markdown(f"""
+                st.markdown("""
                 <div style="font-size: 0.95rem; line-height: 1.6;">
                     Based on your latest clinical readings, your AI risk indicator is currently <b>Stable</b>. Excellent job maintaining your health targets! Continue with your current lifestyle and medication routine.
                 </div>
@@ -202,7 +210,7 @@ with col_main:
             </div>
             """, unsafe_allow_html=True)
             st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-            st.button("☎️ Contact 24/7 Emergency Helpline", type="primary", key=f"btn_emg_{pid}", use_container_width=True)
+            st.button("🚨 Emergency ER Assistance", type="primary", key=f"btn_emg_{pid}", use_container_width=True)
 
     # --------------------------------------------------------------------------
     # TAB 2: VITALS LOG & HISTORY
@@ -211,43 +219,38 @@ with col_main:
         st.write("")
         
         with st.container(border=True):
-            with st.form(key=f"vitals_form_{pid}", clear_on_submit=True):
+            with st.form(key=f"home_vitals_form_{pid}", clear_on_submit=True):
                 st.markdown("### 📊 Daily Home Reading Ingestion")
                 st.caption("Submit your home monitor readings to instantly synchronize with Dr. Velasco's dashboard.")
                 st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
                 
-                # Render comprehensive vitals inputs based on general tracking
                 v1, v2, v3 = st.columns(3)
                 with v1:
-                    st.number_input("Systolic Blood Pressure (mmHg)", min_value=50, max_value=250, value=120, step=1, key=f"v_sbp_{pid}")
-                    st.caption("Healthy Target: 90 – 120 mmHg")
+                    st.number_input("Systolic Blood Pressure (mmHg)", min_value=50.0, max_value=250.0, value=120.0, step=1.0, format="%.1f", key=f"v_sbp_{pid}")
+                    st.caption("Target Range: 90 – 120 mmHg")
                 with v2:
-                    st.number_input("Diastolic Blood Pressure (mmHg)", min_value=30, max_value=150, value=80, step=1, key=f"v_dbp_{pid}")
-                    st.caption("Healthy Target: 60 – 80 mmHg")
+                    st.number_input("Diastolic Blood Pressure (mmHg)", min_value=30.0, max_value=150.0, value=80.0, step=1.0, format="%.1f", key=f"v_dbp_{pid}")
+                    st.caption("Target Range: 60 – 80 mmHg")
                 with v3:
-                    st.number_input("Resting Heart Rate (bpm)", min_value=30, max_value=200, value=75, step=1, key=f"v_hr_{pid}")
-                    st.caption("Healthy Target: 60 – 100 bpm")
+                    st.number_input("Resting Heart Rate (bpm)", min_value=30.0, max_value=200.0, value=75.0, step=1.0, format="%.1f", key=f"v_hr_{pid}")
+                    st.caption("Target Range: 60 – 100 bpm")
 
-                v4, v5, v6 = st.columns(3)
+                v4, v5 = st.columns(2)
                 with v4:
                     st.number_input("Fasting Glucose (mg/dL)", min_value=40.0, max_value=500.0, value=95.0, step=1.0, format="%.1f", key=f"v_glu_{pid}")
-                    st.caption("Healthy Target: 70 – 99 mg/dL")
+                    st.caption("Target Range: 70 – 99 mg/dL")
                 with v5:
                     st.number_input("Resting SpO2 (%)", min_value=60.0, max_value=100.0, value=98.0, step=0.1, format="%.1f", key=f"v_spo2_{pid}")
-                    st.caption("Healthy Target: > 95 %")
-                with v6:
-                    st.number_input("Body Weight (kg)", min_value=30.0, max_value=300.0, value=80.0, step=0.1, format="%.1f", key=f"v_wt_{pid}")
-                    st.caption("Log daily for fluid retention tracking.")
+                    st.caption("Target Range: > 95 %")
 
                 submit_vitals = st.form_submit_button("📤 Submit Daily Readings", type="primary", use_container_width=True)
                 if submit_vitals:
-                    st.success("Readings successfully uploaded and synchronized with the clinical database.")
+                    st.success("Readings successfully uploaded and synchronized with clinical database.")
 
         with st.container(border=True):
             st.markdown("### 📈 Interactive Longitudinal Trend Chart")
             st.caption("Your 30-day baseline tracker. The green shaded area represents your physician-assigned target corridor.")
             
-            # Generate mock longitudinal data based on primary condition
             days = [f"Day {i}" for i in range(1, 31)]
             if "Cardiovascular" in active_pat["primary_cond"]:
                 y_vals = [145, 142, 140, 138, 144, 150, 155, 160, 158, 152, 148, 145, 142, 140, 139, 138, 140, 145, 148, 150, 155, 160, 162, 165, 160, 158, 155, 150, 145, 142]
@@ -263,9 +266,7 @@ with col_main:
                 y_label = "Resting SpO2 (%)"
 
             fig = go.Figure()
-            # Add shaded target corridor
             fig.add_hrect(y0=target_min, y1=target_max, line_width=0, fillcolor="rgba(16, 185, 129, 0.15)", layer="below")
-            # Add Line
             fig.add_trace(go.Scatter(
                 x=days, y=y_vals, mode="lines+markers",
                 line=dict(color="#007979", width=3),
@@ -302,6 +303,10 @@ with col_main:
                 </div>
                 """, unsafe_allow_html=True)
                 st.info("Please remain in the digital waiting room. Dr. Velasco will call you shortly.")
+                
+                if st.button("❌ Cancel Check-In / Withdraw", key=f"cancel_q_{pid}", use_container_width=True):
+                    st.session_state.today_queue = [q for q in st.session_state.today_queue if q["id"] != pid]
+                    st.rerun()
         else:
             with st.container(border=True):
                 with st.form(key=f"checkin_form_{pid}", clear_on_submit=True):
@@ -318,7 +323,7 @@ with col_main:
                     with ci2:
                         c_hr = st.number_input("Today's Intake Heart Rate (bpm)", min_value=30, max_value=200, value=75, step=1, key=f"ci_hr_{pid}")
                         
-                    submit_checkin = st.form_submit_button("📥 Check In for Today's Visit", type="primary", use_container_width=True)
+                    submit_checkin = st.form_submit_button("📥 Submit Pre-Visit Check-In & Get Queue Ticket", type="primary", use_container_width=True)
                     
                     if submit_checkin:
                         new_q = f"Q-{len(st.session_state.today_queue)+1:02d}"
@@ -335,6 +340,7 @@ with col_main:
                             "watch_flag": "Reported acute symptoms." if c_symp else "None declared.", 
                             "lifecycle_status": "In Waiting Room"
                         })
+                        st.success("Check-in complete! Your queue ticket has been issued.")
                         st.rerun()
 
     # --------------------------------------------------------------------------
@@ -350,7 +356,6 @@ with col_main:
             fam_hist_list = active_pat.get("fam_history", [])
             fam_hist_str = " | ".join(fam_hist_list).lower() if fam_hist_list else ""
             
-            # Determine Risk based on generic keywords
             if any(kw in fam_hist_str for kw in ["early", "<55", "heart attack", "stroke"]):
                 risk_badge = "🔴 High Genetic Load"
                 risk_bg, risk_fg = "#fee2e2", "#ef4444"
@@ -368,7 +373,7 @@ with col_main:
                     <div style="background: {risk_bg}; color: {risk_fg}; padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 0.85rem;">{risk_badge}</div>
                 </div>
                 <div style="font-size: 0.95rem;"><b>Recorded Lineage:</b> {', '.join(fam_hist_list) if fam_hist_list else 'No significant familial conditions recorded.'}</div>
-                <div style="margin-top: 12px; font-size: 0.8rem; font-weight: 600; color: #64748b;">✔ Verified by Attending Clinician on Record</div>
+                <div style="margin-top: 12px; font-size: 0.8rem; font-weight: 600; color: #64748b;">✔ Clinically Verified on Record</div>
             </div>
             """, unsafe_allow_html=True)
             
