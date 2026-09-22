@@ -116,8 +116,8 @@ with col_main:
                     st.markdown(f"**Signed in as:** `{pid}`")
                     st.divider()
                     if st.button("Dark Mode", use_container_width=True, key=f"btn_dark_{pid}"): st.session_state.theme_mode = "dark"; st.rerun()
-                    if st.button("Light Mode", use_container_width=True, key=f"btn_light_{pid}"): st.session_state.theme_mode = "light"; st.rerun()
-                    st.divider()
+                    if st.button("Light Mode", use_container_width=True, key=f"btn_light_{pid}"):
+                        st.divider()
                     if st.button("🚪 Log Out", use_container_width=True, key=f"btn_logout_{pid}"):
                         st.session_state.logged_in_patient_id = "PAT-9912"
                         st.rerun()
@@ -148,141 +148,129 @@ with col_main:
         """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 5. FOUR-TAB ARCHITECTURE
+    # 5. FIVE-TAB ARCHITECTURE
     # ==============================================================================
-    tab_care, tab_vitals, tab_checkin, tab_family = st.tabs(["My Care Plan", "Vitals Log & History", "Pre-Visit Check-In", "Family Tree & Hereditary"])
-
+    tab_care, tab_vitals, tab_checkin, tab_family, tab_settings = st.tabs(["My Care Plan", "Vitals Log & History", "Pre-Visit Check-In", "Family Tree & Hereditary", "Account Settings"])
     # --------------------------------------------------------------------------
     # TAB 1: MY CARE PLAN & DOCTOR'S DIRECTIVES
+    # --------------------------------------------------------------------------
+    # --------------------------------------------------------------------------
+    # TAB 1: MY CARE PLAN (RESTRUCTURED: ACTION PLAN & CLINICAL DIRECTIVES)
     # --------------------------------------------------------------------------
     with tab_care:
         st.write("")
         
+        # CARD 1: ATTENDING PHYSICIAN ASSESSMENT & ORDERS
         with st.container(border=True):
-            st.markdown("### 📝 Attending Physician Directives")
-            st.info(f"**Latest Entry (Dr. Velasco):** {active_pat['prior_directive']}")
+            st.markdown("### 🩺 Attending Physician Directives")
+            st.caption("Official orders and clinical impressions issued by Dr. Maria A. Velasco, MD, PhD.")
             
+            st.info(f"**Latest Clinical Order:** {active_pat.get('prior_directive', 'No active clinical directives recorded.')}")
+            
+            c_meta1, c_meta2 = st.columns(2)
+            with c_meta1:
+                st.markdown(f"**Primary Focus:** `{active_pat.get('primary_cond', 'General Health')}`")
+            with c_meta2:
+                st.markdown(f"**Current Care Classification:** `{active_pat.get('risk_flag', 'Stable')}`")
+
+        # CARD 2: "HOW TO GET BETTER" - LIFESTYLE & PREVENTIVE ACTION PLAN
         with st.container(border=True):
-            st.markdown("### 💊 Medication Cabinet & Adherence Tracker")
-            st.caption("Mark your daily doses as taken to log adherence in your clinical record.")
+            st.markdown("### 🎯 Your Recovery & Wellness Action Plan")
+            st.caption("Personalized lifestyle corridors prescribed to lower your clinical risk indicators.")
+            
+            col_act1, col_act2, col_act3 = st.columns(3, gap="medium")
+            
+            with col_act1:
+                st.markdown("""
+                <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 16px; height: 100%;">
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #007979; margin-bottom: 6px;">🥗 Nutrition & Diet</div>
+                    <ul style="font-size: 0.85rem; padding-left: 18px; margin: 0; line-height: 1.5;">
+                        <li><b>Sodium Target:</b> Strictly &lt; 2,000 mg/day (DASH Protocol).</li>
+                        <li><b>Glycemic Control:</b> Eliminate sugar-sweetened beverages.</li>
+                        <li><b>Hydration:</b> 2.0 – 2.5 Liters of water daily.</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            with col_act2:
+                st.markdown("""
+                <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 16px; height: 100%;">
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #007979; margin-bottom: 6px;">🏃 Physical Activity</div>
+                    <ul style="font-size: 0.85rem; padding-left: 18px; margin: 0; line-height: 1.5;">
+                        <li><b>Moderate Aerobic:</b> 30 mins brisk walk, 5 days/wk.</li>
+                        <li><b>Exertion Ceiling:</b> Keep resting HR &lt; 100 bpm during workouts.</li>
+                        <li><b>Sedentary Break:</b> 5-min walk every 60 mins of sitting.</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col_act3:
+                st.markdown("""
+                <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 16px; height: 100%;">
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #007979; margin-bottom: 6px;">💤 Sleep & Recovery</div>
+                    <ul style="font-size: 0.85rem; padding-left: 18px; margin: 0; line-height: 1.5;">
+                        <li><b>Sleep Window:</b> 7.0 – 8.0 hours uninterrupted.</li>
+                        <li><b>Evening Screen Cutoff:</b> 45 minutes before sleep.</li>
+                        <li><b>Stress Reduction:</b> 10-minute diaphragmatic breathing.</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # CARD 3: ACTIVE MEDICATIONS & ADHERENCE
+        with st.container(border=True):
+            st.markdown("### 💊 Prescribed Medications")
+            st.caption("Follow the dosing schedule as prescribed. Contact the clinic if adverse effects occur.")
             
             meds = [m.strip() for m in active_pat.get("active_rx", "").split(",") if m.strip()]
             if meds:
                 for i, med in enumerate(meds):
-                    st.checkbox(f"✅ I have taken **{med}** today.", key=f"rx_dose_{i}_{pid}")
+                    st.checkbox(f"✅ Logged dose: **{med}**", key=f"rx_dose_log_{i}_{pid}")
             else:
-                st.markdown("No active prescriptions recorded.")
+                st.info("No active prescription medications recorded.")
                 
-            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
             if active_pat.get("allergies") and active_pat.get("allergies") != "None":
-                st.markdown(f"<div style='background:#fee2e2; color:#ef4444; border-left: 4px solid #ef4444; padding:10px 14px; border-radius:4px; font-weight:600; font-size:0.9rem;'>⚠️ Confirmed Allergies: {active_pat['allergies']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background:#fee2e2; color:#ef4444; border-left: 4px solid #ef4444; padding:8px 12px; border-radius:4px; font-weight:600; font-size:0.85rem; margin-top:12px;'>⚠️ Documented Drug Allergies: {active_pat['allergies']}</div>", unsafe_allow_html=True)
 
+        # CARD 4: NEXT MILESTONE & RED FLAGS
         with st.container(border=True):
-            st.markdown("### 🤖 Plain-Language AI Diagnostic Summary")
-            if "High Risk" in active_pat["risk_flag"]:
+            col_m1, col_m2 = st.columns([1.2, 1.8], gap="large")
+            with col_m1:
+                st.markdown("#### 📅 Next Follow-Up Checkpoint")
                 st.markdown("""
-                <div style="font-size: 0.95rem; line-height: 1.6;">
-                    Based on your latest clinical readings, your AI risk indicator is currently <b>Elevated</b>. 
-                    <br><br>
-                    <b>What this means:</b> Some of your baseline markers (such as your blood pressure or glycemic indices) are running higher than your personal target zone. This is common and manageable with proper tracking.
-                    <br><br>
-                    <b>Action Plan:</b> Please ensure strict adherence to your medication cabinet above, prioritize low-sodium/low-glycemic meals, and complete your daily vitals log so Dr. Velasco can review your trends.
+                * **Scheduled Visit:** October 15, 2026 (In-Clinic)
+                * **Pre-Visit Requirement:** Fasting blood test 48 hours prior.
+                * **Assigned Doctor:** Dr. Maria A. Velasco
+                """)
+            with col_m2:
+                st.markdown("#### 🚨 When to Seek Emergency Care")
+                st.markdown("""
+                <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid #ef4444; border-radius: 8px; padding: 12px; font-size: 0.85rem; color: #b91c1c;">
+                    <b>Go to the nearest emergency department immediately if experiencing:</b>
+                    <ul style="margin: 4px 0 0 16px; padding: 0;">
+                        <li>Chest tightness, pressure, or radiating pain to jaw or left arm.</li>
+                        <li>Sudden difficulty breathing or resting SpO2 &lt; 90%.</li>
+                        <li>Sudden numbness, facial drooping, or speech difficulty.</li>
+                    </ul>
                 </div>
                 """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div style="font-size: 0.95rem; line-height: 1.6;">
-                    Based on your latest clinical readings, your AI risk indicator is currently <b>Stable</b>. Excellent job maintaining your health targets! Continue with your current lifestyle and medication routine.
-                </div>
-                """, unsafe_allow_html=True)
-
-        with st.container(border=True):
-            st.markdown("### 🚨 Emergency Red-Flag Warning")
-            st.markdown("""
-            <div style="border: 2px solid #ef4444; border-radius: 8px; padding: 16px; background: rgba(239, 68, 68, 0.05);">
-                <div style="color: #ef4444; font-weight: 800; font-size: 1.1rem; margin-bottom: 8px;">SEEK IMMEDIATE EMERGENCY CARE IF YOU EXPERIENCE:</div>
-                <ul style="margin: 0 0 12px 16px; color: #ef4444; font-weight: 600;">
-                    <li>Crushing chest pain radiating to the left arm or jaw.</li>
-                    <li>Sudden, severe shortness of breath or inability to breathe.</li>
-                    <li>Sudden weakness, numbness in face/limbs, or slurred speech.</li>
-                    <li>Severe hypoglycemia (confusion, fainting, unresponsiveness).</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-            st.button("🚨 Emergency ER Assistance", type="primary", key=f"btn_emg_{pid}", use_container_width=True)
 
     # --------------------------------------------------------------------------
-    # TAB 2: VITALS LOG & HISTORY
+    # TAB 2: VITALS LOG & HISTORY (READ-ONLY)
     # --------------------------------------------------------------------------
     with tab_vitals:
         st.write("")
         
         with st.container(border=True):
-            with st.form(key=f"home_vitals_form_{pid}", clear_on_submit=True):
-                st.markdown("### 📊 Daily Home Reading Ingestion")
-                st.caption("Submit your home monitor readings to instantly synchronize with Dr. Velasco's dashboard.")
-                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                
-                v1, v2, v3 = st.columns(3)
-                with v1:
-                    st.number_input("Systolic Blood Pressure (mmHg)", min_value=50.0, max_value=250.0, value=120.0, step=1.0, format="%.1f", key=f"v_sbp_{pid}")
-                    st.caption("Target Range: 90 – 120 mmHg")
-                with v2:
-                    st.number_input("Diastolic Blood Pressure (mmHg)", min_value=30.0, max_value=150.0, value=80.0, step=1.0, format="%.1f", key=f"v_dbp_{pid}")
-                    st.caption("Target Range: 60 – 80 mmHg")
-                with v3:
-                    st.number_input("Resting Heart Rate (bpm)", min_value=30.0, max_value=200.0, value=75.0, step=1.0, format="%.1f", key=f"v_hr_{pid}")
-                    st.caption("Target Range: 60 – 100 bpm")
-
-                v4, v5 = st.columns(2)
-                with v4:
-                    st.number_input("Fasting Glucose (mg/dL)", min_value=40.0, max_value=500.0, value=95.0, step=1.0, format="%.1f", key=f"v_glu_{pid}")
-                    st.caption("Target Range: 70 – 99 mg/dL")
-                with v5:
-                    st.number_input("Resting SpO2 (%)", min_value=60.0, max_value=100.0, value=98.0, step=0.1, format="%.1f", key=f"v_spo2_{pid}")
-                    st.caption("Target Range: > 95 %")
-
-                submit_vitals = st.form_submit_button("📤 Submit Daily Readings", type="primary", use_container_width=True)
-                if submit_vitals:
-                    st.success("Readings successfully uploaded and synchronized with clinical database.")
-
-        with st.container(border=True):
-            st.markdown("### 📈 Interactive Longitudinal Trend Chart")
-            st.caption("Your 30-day baseline tracker. The green shaded area represents your physician-assigned target corridor.")
+            st.markdown("### 📊 Latest Clinical Findings")
+            st.caption("These vitals were recorded by your attending physician during your last check-up.")
             
-            days = [f"Day {i}" for i in range(1, 31)]
-            if "Cardiovascular" in active_pat["primary_cond"]:
-                y_vals = [145, 142, 140, 138, 144, 150, 155, 160, 158, 152, 148, 145, 142, 140, 139, 138, 140, 145, 148, 150, 155, 160, 162, 165, 160, 158, 155, 150, 145, 142]
-                target_min, target_max = 90, 120
-                y_label = "Systolic Blood Pressure (mmHg)"
-            elif "Diabetes" in active_pat["primary_cond"]:
-                y_vals = [135, 130, 125, 120, 125, 130, 135, 140, 145, 150, 145, 140, 135, 130, 125, 122, 125, 130, 135, 140, 145, 150, 148, 145, 140, 135, 130, 125, 120, 118]
-                target_min, target_max = 70, 100
-                y_label = "Fasting Glucose (mg/dL)"
-            else:
-                y_vals = [94, 95, 95, 96, 96, 95, 94, 93, 92, 91, 90, 91, 92, 93, 94, 95, 96, 95, 94, 93, 92, 91, 90, 89, 88, 89, 90, 92, 94, 95]
-                target_min, target_max = 95, 100
-                y_label = "Resting SpO2 (%)"
-
-            fig = go.Figure()
-            fig.add_hrect(y0=target_min, y1=target_max, line_width=0, fillcolor="rgba(16, 185, 129, 0.15)", layer="below")
-            fig.add_trace(go.Scatter(
-                x=days, y=y_vals, mode="lines+markers",
-                line=dict(color="#007979", width=3),
-                marker=dict(size=6, color="#007979"),
-                name="Home Reading"
-            ))
-            fig.update_layout(
-                height=300, margin=dict(l=20, r=20, t=20, b=20),
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                yaxis_title=y_label,
-                xaxis=dict(showgrid=True, gridcolor="rgba(148, 163, 184, 0.1)"),
-                yaxis=dict(showgrid=True, gridcolor="rgba(148, 163, 184, 0.1)", autorange=True)
-            )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-            st.button("📄 Export Home Log Summary", key=f"btn_export_{pid}", use_container_width=True)
+            v1, v2, v3, v4 = st.columns(4)
+            v1.metric("Blood Pressure", active_pat.get("latest_bp", "N/A"))
+            v2.metric("Resting Heart Rate", f"{active_pat.get('resting_hr', 'N/A')} bpm")
+            v3.metric("BMI", active_pat.get("bmi", "N/A"))
+            v4.metric("Risk Status", active_pat.get("risk_flag", "N/A"))
+            
+        # ... (Keep the "Interactive Longitudinal Trend Chart" code below this) ...
 
     # --------------------------------------------------------------------------
     # TAB 3: PRE-VISIT CHECK-IN
@@ -344,61 +332,77 @@ with col_main:
                         st.rerun()
 
     # --------------------------------------------------------------------------
-    # TAB 4: FAMILY TREE & HEREDITARY
+    # TAB 4: FAMILY TREE & HEREDITARY (THESIS FRAMEWORK)
     # --------------------------------------------------------------------------
     with tab_family:
         st.write("")
         
         with st.container(border=True):
-            st.markdown("### 🧬 Genomic Linkage & Verified Hereditary Risk")
-            st.caption("This profile dictates your baseline risk multipliers in the CDSS AI engine.")
+            st.markdown("### 🧬 Familial Risk Assessment (FHRS) Input")
+            st.caption("Log affected relatives to calculate your disease-specific Risk-Stratification Score.")
             
-            fam_hist_list = active_pat.get("fam_history", [])
-            fam_hist_str = " | ".join(fam_hist_list).lower() if fam_hist_list else ""
-            
-            if any(kw in fam_hist_str for kw in ["early", "<55", "heart attack", "stroke"]):
-                risk_badge = "🔴 High Genetic Load"
-                risk_bg, risk_fg = "#fee2e2", "#ef4444"
-            elif fam_hist_list:
-                risk_badge = "🟡 Moderate Risk"
-                risk_bg, risk_fg = "#fef3c7", "#d97706"
-            else:
-                risk_badge = "🟢 Low Risk"
-                risk_bg, risk_fg = "#d1fae5", "#059669"
+            with st.form(key=f"fam_framework_form_{pid}", clear_on_submit=True):
+                st.markdown("#### 1. Clinical & Biological Variables")
+                disease = st.selectbox("Disease Category", [
+                    "Cardiovascular Disease / Hypertension", 
+                    "Type 2 Diabetes Mellitus", 
+                    "Chronic Respiratory Disease", 
+                    "Neurological Disorder", 
+                    "Mental Health Disorder"
+                ])
                 
-            st.markdown(f"""
-            <div style="background: rgba(0, 121, 121, 0.04); border: 1px solid rgba(0, 121, 121, 0.2); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div style="font-weight: 700; font-size: 1.1rem; color: #007979;">Active Clinical Registry Profile</div>
-                    <div style="background: {risk_bg}; color: {risk_fg}; padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 0.85rem;">{risk_badge}</div>
-                </div>
-                <div style="font-size: 0.95rem;"><b>Recorded Lineage:</b> {', '.join(fam_hist_list) if fam_hist_list else 'No significant familial conditions recorded.'}</div>
-                <div style="margin-top: 12px; font-size: 0.8rem; font-weight: 600; color: #64748b;">✔ Clinically Verified on Record</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with st.container(border=True):
-            with st.form(key=f"fam_form_{pid}", clear_on_submit=False):
-                st.markdown("#### Update Patient-Reported Familial History")
-                st.caption("Ensure your lineage data remains up to date. Changes submitted here will be queued for physician review.")
-                st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    relationship = st.selectbox("Relationship Weight (Ri)", [
+                        "Tier 1 (Parents, full siblings, children) - 0.50",
+                        "Tier 2 (Grandparents, aunts/uncles) - 0.25",
+                        "Tier 3 (First cousins, great-grandparents) - 0.125"
+                    ])
+                with col_r2:
+                    onset = st.selectbox("Age of Onset Weight (Oi)", [
+                        "Very early onset - 3.0",
+                        "Early onset - 2.0",
+                        "Typical/standard onset - 1.0",
+                        "Late onset - 0.75"
+                    ])
                 
-                with st.expander("👨 Paternal History (Father's Lineage)", expanded=True):
-                    st.checkbox("Premature Heart Attack or CVD (Before age 55)", key=f"fh_pat_cvd_{pid}")
-                    st.checkbox("Hypertension (High Blood Pressure)", key=f"fh_pat_hyp_{pid}")
-                    st.checkbox("Type 2 Diabetes", key=f"fh_pat_t2d_{pid}")
-                    st.checkbox("Neurological (Dementia, Alzheimer's, Parkinson's)", key=f"fh_pat_neuro_{pid}")
-                    
-                with st.expander("👩 Maternal History (Mother's Lineage)", expanded=False):
-                    st.checkbox("Premature Heart Attack or CVD (Before age 65)", key=f"fh_mat_cvd_{pid}")
-                    st.checkbox("Hypertension (High Blood Pressure)", key=f"fh_mat_hyp_{pid}")
-                    st.checkbox("Type 2 Diabetes", key=f"fh_mat_t2d_{pid}")
-                    st.checkbox("Autoimmune or Pulmonary Disorders", key=f"fh_mat_auto_{pid}")
-                    
-                with st.expander("👧👦 Sibling Lineage", expanded=False):
-                    st.checkbox("Sibling with Early-Onset CVD or Stroke", key=f"fh_sib_cvd_{pid}")
-                    st.checkbox("Sibling with Severe Psychiatric / Depression History", key=f"fh_sib_psych_{pid}")
-
-                submit_fam = st.form_submit_button("📤 Submit Updates for Review", type="primary", use_container_width=True)
+                st.markdown("#### 2. Shared Environmental Exposure (Ed)")
+                env_exposure = st.multiselect("Select all relevant lifestyle/household exposures:", [
+                    "High-sodium or high-sugar diet",
+                    "Sedentary household lifestyle",
+                    "Household smoking / secondhand smoke",
+                    "Indoor air pollution / biomass fuel",
+                    "Adverse childhood experiences / chronic stress"
+                ])
+                
+                submit_fam = st.form_submit_button("📥 Calculate & Submit Risk Variables", type="primary", use_container_width=True)
+                
                 if submit_fam:
-                    st.success("Hereditary updates submitted successfully. Pending clinician verification.")
+                    st.success("Variables submitted successfully. Your FHRS score will be updated upon doctor review.")
+    # --------------------------------------------------------------------------
+    # TAB 5: ACCOUNT SETTINGS
+    # --------------------------------------------------------------------------
+    with tab_settings:
+        st.write("")
+        with st.container(border=True):
+            st.markdown("### Account & Personal Information")
+            st.caption("Manage your profile credentials. Security changes will sync with Lucerna Medica administration.")
+            
+            col_set1, col_set2 = st.columns(2, gap="large")
+            
+            with col_set1:
+                st.markdown("##### Personal Details")
+                st.text_input("Full Name", value=active_pat["name"], disabled=True, help="Contact clinic administration to change registered name.")
+                st.text_input("Biological Sex", value=active_pat["sex"], disabled=True)
+                st.text_input("Contact Number", placeholder="09XX-XXX-XXXX")
+                
+            with col_set2:
+                st.markdown("##### Security & Authentication")
+                with st.form("patient_password_change_form", clear_on_submit=True):
+                    st.text_input("Current Password", type="password", placeholder="Enter current password")
+                    st.text_input("New Password", type="password", placeholder="Enter new password")
+                    st.text_input("Confirm New Password", type="password", placeholder="Re-type new password")
+                    
+                    if st.form_submit_button("Update Password", type="primary", use_container_width=True):
+                        st.success("✅ Password update request submitted to system administration.")
+                        

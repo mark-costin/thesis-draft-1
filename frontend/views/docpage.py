@@ -1476,3 +1476,13 @@ with col_main:
                     font=dict(color="#0f172a" if st.session_state.get("theme_mode") == "light" else "#E5E5E5")
                 )
                 st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+        with st.container(border=True):
+            st.markdown("#### ✍️ Prescribe Treatment & Update Patient Care Plan")
+            with st.form(key=f"care_plan_form_{pid}"):
+                new_directive = st.text_area("Clinical Directive & Orders", value=active_pat.get("prior_directive", ""))
+                new_rx = st.text_input("Prescribed Medications (comma-separated)", value=active_pat.get("active_rx", ""))
+                if st.form_submit_button("Update Care Plan in Patient Portal", type="primary"):
+                    active_pat["prior_directive"] = new_directive
+                    active_pat["active_rx"] = new_rx
+                    st.success("Patient Care Plan updated and synced to Patient Portal.")
+                    st.rerun()        
