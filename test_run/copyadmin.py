@@ -10,7 +10,9 @@ from datetime import datetime
 st.set_page_config(layout="wide")
 
 user_avatar_url = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
-
+user_role = "ADMIN"
+user_name = "First Name"
+user_email = "admin.system@lucernamedica.com"
 
 # --- THEME & NIGHT LIGHT STATE ---
 if "theme_mode" not in st.session_state:
@@ -448,9 +450,6 @@ if "doctor_audit_logs" not in st.session_state:
         {"timestamp": "2026-09-09 14:22:11", "target_doctor": "Smith, John M.", "event_type": "VERIFICATION_APPROVED", "actor": "Admin (admin.system)", "ip_address": "10.0.4.12", "details": "PRC credential verified against national registry."}
     ]
 
-if "active_admin_id" not in st.session_state:
-    st.session_state.active_admin_id = "EMP-001"
-
 if "employee_directory" not in st.session_state:
     st.session_state.employee_directory = [
         {"emp_id": "EMP-001", "name": "First Name", "role": "System Admin", "email": "admin.system@lucernamedica.com", "status": "Active"},
@@ -472,39 +471,6 @@ if "patient_audit_logs" not in st.session_state:
         {"timestamp": "2026-09-10 11:30:22", "target_patient": "Bautista, Carlos T.", "event_type": "ACCOUNT_SUSPENDED", "actor": "System Guard", "ip_address": "System", "details": "Suspended due to 5 consecutive failed logins."}
     ]
 
-
-
-# Resolve active admin object dynamically
-active_admin = next((e for e in st.session_state.employee_directory if e["emp_id"] == st.session_state.active_admin_id), st.session_state.employee_directory[0])
-user_name = active_admin["name"]
-user_role = active_admin["role"]
-user_email = active_admin["email"]
-
-# Helper callback for the sandbox
-def _sync_sandbox_admin():
-    selected_label = st.session_state.sandbox_admin_selector
-    # Re-map the label back to the exact EMP ID
-    emp_options_map_local = {f"{e['name']} ({e['role']})": e['emp_id'] for e in st.session_state.employee_directory}
-    st.session_state.active_admin_id = emp_options_map_local.get(selected_label)
-
-# ==============================================================================
-# SIDEBAR EVALUATOR SANDBOX (THESIS DEMO MODE)
-# ==============================================================================
-with st.sidebar:
-    with st.expander("🛠️ Evaluator Sandbox (Demo Mode)", expanded=False):
-        st.caption("Instantly switch active administrative roles to demonstrate RBAC (Role-Based Access Control) and system logging during thesis evaluation.")
-        
-        # Create mapping of "Name (Role)" -> "ID"
-        emp_options_map = {f"{e['name']} ({e['role']})": e['emp_id'] for e in st.session_state.employee_directory}
-        current_selection_label = next((k for k, v in emp_options_map.items() if v == st.session_state.active_admin_id), list(emp_options_map.keys())[0])
-        
-        st.selectbox(
-            "Switch Active Administrator",
-            options=list(emp_options_map.keys()),
-            index=list(emp_options_map.keys()).index(current_selection_label),
-            key="sandbox_admin_selector",
-            on_change=_sync_sandbox_admin
-        )
 count_admins = 1
 count_patients = len(st.session_state.patient_directory)
 count_doctors = len(st.session_state.doctor_directory)
