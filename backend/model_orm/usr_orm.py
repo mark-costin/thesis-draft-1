@@ -1,5 +1,5 @@
 import bcrypt
-from dbconnect import db
+from backend.dbconnect import db
 
 class User(db.Model):
     __tablename__ = 'users'

@@ -1,4 +1,4 @@
-from dbconnect import db
+from backend.dbconnect import db
 
 class Patient(db.Model):
     __tablename__ = 'patients'
@@ -22,3 +22,15 @@ class Patient(db.Model):
     hipaa_consent_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
     is_active = db.Column(db.Boolean, default=True)
     updated_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now(), onupdate=db.func.now())
+
+    # --- TEMPORARILY COMMENT THESE OUT TO FIX THE MAPPER ERROR ---
+    # family_history = db.relationship('FamilyHistory', backref='patient', cascade='all, delete-orphan', lazy=True)
+    # fhrs_records = db.relationship('FHRSStratification', backref='patient', cascade='all, delete-orphan', lazy=True)
+    
+    # cvd_metrics = db.relationship('CVDMetrics', backref='patient', uselist=False, cascade='all, delete-orphan')
+    # t2d_metrics = db.relationship('T2DMetrics', backref='patient', uselist=False, cascade='all, delete-orphan')
+    # respiratory_metrics = db.relationship('RespiratoryMetrics', backref='patient', uselist=False, cascade='all, delete-orphan')
+    # neuro_mental_metrics = db.relationship('NeuroMentalMetrics', backref='patient', uselist=False, cascade='all, delete-orphan')
+
+    # Leave this line active for your vector search test:
+    clinical_vector = db.relationship('ClinicalVector', backref='patient', uselist=False, cascade='all, delete-orphan')
