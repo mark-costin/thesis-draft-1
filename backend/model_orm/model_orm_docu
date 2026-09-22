@@ -1,0 +1,51 @@
+================================================================================
+ - BACKEND ORM & DATABASE SCHEMA DOCUMENTATION
+================================================================================
+
+1. ARCHITECTURAL OVERVIEW
+--------------------------------------------------------------------------------
+The Medical Platform  database uses a normalized 1-to-1 relational design pattern:
+- Base Identity Table (`users`): Manages credentials, authentication states, system roles, 
+  and security control flags (brute-force defense and session versions).
+- Domain Profile Tables (`patients`, `doctors`, `admins`): Hold role-specific clinical, 
+  demographic, and administrative attributes linked via foreign keys to `users.user_id`.
+
+2. MODEL SCHEMAS & RELATIONSHIPS
+--------------------------------------------------------------------------------
+
+A. User Model (`users` table) - Defined in usr_orm.py
+- user_id (Integer, Primary Key)
+- username (String(150), Unique, Not Null)
+- password_hash (String(255), Not Null) - Salted bcrypt hash
+- role (String(20), Not Null) - ('PATIENT', 'DOCTOR', 'ADMIN')
+- is_locked (Boolean, Default: False) - Brute-force lockout flag
+- failed_attempts (Integer, Default: 0) - Consecutive invalid login counter
+- token_version (Integer, Default: 1) - Incremented to invalidate all active JWT sessions
+- created_at (DateTime with Timezone)
+- Relationships: 1-to-1 cascading deletes with Patient, Doctor, and Admin models.
+
+B. Patient Profile Model (`patients` table) - Defined in pat_orm.py
+- patient_id (Integer, Primary Key)
+- user_id (Integer, Foreign Key -> users.user_id, Unique, Cascade Delete)
+- Demographics: first_name, middle_name, last_name, suffix, date_of_birth, gender, religion
+- Contact & Emergency: address, contact_number, email, emergency_contact_name, 
+  emergency_contact_number, emergency_relation
+- Compliance: hipaa_consent (Boolean), hipaa_consent_at, is_active (Boolean)
+
+C. Doctor Profile Model (`doctors` table) - Defined in doc_orm.py
+- doctor_id (Integer, Primary Key)
+- user_id (Integer, Foreign Key -> users.user_id, Unique, Cascade Delete)
+- Demographics & Credentials: first_name, middle_name, last_name, suffix, license_number (Unique)
+- Professional: specialization, hospital_affiliation
+- Contact & Emergency: address, contact_number, email, emergency_contact_name, 
+  emergency_contact_number, emergency_relation
+- Verification: is_verified (Boolean)
+
+D. Admin Profile Model (`admins` table) - Defined in adm_orm.py
+- admin_id (Integer, Primary Key)
+- user_id (Integer, Foreign Key -> users.user_id, Unique, Cascade Delete)
+- Demographics & Credentials: first_name, middle_name, last_name, suffix, license_number (Unique)
+- Organizational: specialization, hospital_affiliation
+- Contact & Emergency: address, contact_number, email, emergency_contact_name, 
+  emergency_contact_number, emergency_relation
+- Verification: is_verified (Boolean)
