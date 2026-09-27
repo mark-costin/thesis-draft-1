@@ -342,6 +342,21 @@ with col_main:
                 with st.popover("⚙️"):
                     if st.button("Dark Mode", use_container_width=True): st.session_state.theme_mode = "dark"; st.rerun()
                     if st.button("Light Mode", use_container_width=True): st.session_state.theme_mode = "light"; st.rerun()
+                    
+                    st.divider()
+                    st.markdown(f"<div style='text-align: center; color: #007979; font-size: 0.85rem; margin-bottom: 10px;'>{active_doc.get('email', 'Clinician Workspace')}</div>", unsafe_allow_html=True)
+                    
+                    if st.button("⏻ Log Out", type="primary", use_container_width=True, key="doc_logout_btn"):
+                        # Complete session wipe for security compliance
+                        auth_artifacts = [
+                            "authenticated", "jwt_token", "user_role", "user_id", "user_profile", 
+                            "active_patient", "cdss_inference_payload", "ai_inference_completed"
+                        ]
+                        for artifact in auth_artifacts:
+                            if artifact in st.session_state:
+                                del st.session_state[artifact]
+                                
+                        st.rerun()
 
     tab_overview, tab_queue, tab_cdss = st.tabs(["Overview Dashboard", "Patients & Triage", "AI Diagnostics & CDSS"])
 

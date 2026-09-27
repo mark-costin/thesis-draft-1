@@ -119,7 +119,15 @@ with col_main:
                     if st.button("Light Mode", use_container_width=True, key=f"btn_light_{pid}"):
                         st.divider()
                     if st.button("🚪 Log Out", use_container_width=True, key=f"btn_logout_{pid}"):
-                        st.session_state.logged_in_patient_id = "PAT-9912"
+                        # Complete session wipe for security compliance and RBAC enforcement
+                        auth_artifacts = [
+                            "authenticated", "jwt_token", "user_role", "user_id", "user_profile", 
+                            "logged_in_patient_id", "active_patient", "cdss_inference_payload", "ai_inference_completed"
+                        ]
+                        for artifact in auth_artifacts:
+                            if artifact in st.session_state:
+                                del st.session_state[artifact]
+                                
                         st.rerun()
 
     # Welcome Card & Live Clinic Status
@@ -151,9 +159,6 @@ with col_main:
     # 5. FIVE-TAB ARCHITECTURE
     # ==============================================================================
     tab_care, tab_vitals, tab_checkin, tab_family, tab_settings = st.tabs(["My Care Plan", "Vitals Log & History", "Pre-Visit Check-In", "Family Tree & Hereditary", "Account Settings"])
-    # --------------------------------------------------------------------------
-    # TAB 1: MY CARE PLAN & DOCTOR'S DIRECTIVES
-    # --------------------------------------------------------------------------
     # --------------------------------------------------------------------------
     # TAB 1: MY CARE PLAN (RESTRUCTURED: ACTION PLAN & CLINICAL DIRECTIVES)
     # --------------------------------------------------------------------------

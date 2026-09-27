@@ -2,6 +2,7 @@ import datetime
 import re
 import base64
 import os
+import requests
 import streamlit as st
 
 # ==============================================================================
@@ -125,8 +126,8 @@ _, col_main, _ = st.columns([20, 60, 20])
 with col_main:
     with st.container(border=True):
         st.markdown(
-            "<h2 style='text-align:center; margin:0;'>Welcome to the Lucerna Medica!</h2>"
-            "<p style='text-align:center; color:#666; margin: 6px 0 16px 0;'>A simple, secure way for patients, doctors, and staff to stay connected.</p>",
+            "<h2 style='text-align:center; margin:0;'>Welcome to the HEART!</h2>"
+            "<p style='text-align:center; color:#666; margin: 6px 0 16px 0;'>Just a simple welcome message.</p>",
             unsafe_allow_html=True,
         )
 
@@ -159,11 +160,41 @@ with col_main:
                         st.rerun()
                     else:
                         st.session_state.login_err = False
-                        # Update session state to trigger the router
-                        st.session_state.authenticated = True
-                        st.session_state.user_role = role
-                        st.success(f"Logged in as {role}: {user}")
-                        st.rerun()
+                        
+                        try:
+                            resp = requests.post(
+                                "http://localhost:5000/api/auth/login",
+                                json={"username": user, "password": pwd},
+                                timeout=5
+                            )
+                            
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                backend_role = data.get("user", {}).get("role", "").upper()
+                                
+                                # Enforce RBAC constraint
+                                if backend_role != role:
+                                    st.error(f"Access Denied: Account is registered as {backend_role}, not {role}.")
+                                else:
+                                    st.session_state["authenticated"] = True
+                                    st.session_state["jwt_token"] = data.get("access_token")
+                                    st.session_state["user_role"] = backend_role
+                                    st.session_state["user_id"] = data.get("user", {}).get("user_id")
+                                    st.session_state["user_profile"] = data.get("profile", {})
+                                    st.rerun()
+                                    
+                            elif resp.status_code == 401:
+                                error_msg = resp.json().get("error", "Invalid credentials")
+                                st.error(f"❌ {error_msg}")
+                                
+                            elif resp.status_code == 403:
+                                st.warning("⚠️ Account locked due to excessive failed attempts. Please contact administration.")
+                                
+                            else:
+                                st.error(f"Login failed: Server responded with HTTP {resp.status_code}.")
+                                
+                        except requests.exceptions.RequestException:
+                            st.error("Backend offline: Ensure Flask API is running on http://localhost:5000.")
 
         # ----------------------------------------------------------------------
         # TAB 2: PATIENT REGISTRATION
@@ -235,6 +266,8 @@ with col_main:
                 if type_password and confirm_password:
                     if type_password != confirm_password:
                         st.error("⛔ Passwords do not match. Please ensure both fields are identical.")
+                    elif len(type_password) < 8:
+                        st.error("⛔ Password must be at least 8 characters long.")
                     else:
                         st.success("✅ Passwords match.")
 
@@ -262,9 +295,44 @@ with col_main:
                     
                     if not type_password or not confirm_password: errors.append("Both password fields must be filled out.")
                     elif type_password != confirm_password: errors.append("Type Password and Confirm Password do not match.")
+                    elif len(type_password) < 8: errors.append("Password must be at least 8 characters long.")
 
                     if errors:
                         for err in errors: st.error(f"❌ {err}")
                     else:
-                        st.info("⏳ Processing account details...")
-                        st.success("✅ Registration submitted! Credentials will be verified and sent to your Gmail by the IT Admin.")
+                        derived_username = email.split("@")[0].strip().lower()
+                        
+                        payload = {
+                            "username": derived_username,
+                            "password": type_password,
+                            "first_name": first_name.strip(),
+                            "middle_name": middle_name.strip(),
+                            "last_name": last_name.strip(),
+                            "date_of_birth": dob.strftime("%Y-%m-%d"),
+                            "gender": gender,
+                            "religion": religion,
+                            "suffix": suffix,
+                            "address": address.strip(),
+                            "contact_number": contact_num.strip(),
+                            "email": email.strip(),
+                            "emergency_contact_name": em_full_name.strip(),
+                            "emergency_contact_number": em_contact_num.strip(),
+                            "emergency_relation": em_relation.strip(),
+                            "hipaa_consent": hipaa_agreement
+                        }
+                        
+                        with st.spinner("Processing account details..."):
+                            try:
+                                resp = requests.post("http://localhost:5000/api/auth/register", json=payload, timeout=5)
+                                
+                                if resp.status_code == 201:
+                                    st.success("✅ Account registered successfully! Please proceed to the Log In tab.")
+                                elif resp.status_code == 409:
+                                    st.error(f"❌ {resp.json().get('error', 'Username or email already in use.')}")
+                                elif resp.status_code == 400:
+                                    st.error(f"❌ Validation Error: {resp.json().get('error', 'Invalid input data.')}")
+                                else:
+                                    st.error(f"❌ Registration failed: Server responded with HTTP {resp.status_code}.")
+                                    
+                            except requests.exceptions.RequestException:
+                                st.error("Backend offline: Ensure Flask API is running on http://localhost:5000.")

@@ -563,7 +563,11 @@ with col_main:
                     st.divider()
                     st.markdown(f"<div style='text-align: center; color: #007979; font-size: 0.85rem; margin-bottom: 10px;'>{user_email}</div>", unsafe_allow_html=True)
                     if st.button("⏻ Log Out", type="primary", use_container_width=True):
-                        st.session_state.authenticated = False
+                        # Complete session wipe for security compliance
+                        auth_artifacts = ["authenticated", "jwt_token", "user_role", "user_id", "user_profile"]
+                        for artifact in auth_artifacts:
+                            if artifact in st.session_state:
+                                del st.session_state[artifact]
                         st.rerun()
 
     tab_Overview, tab_form, tab_patient, tab_Admin = st.tabs(["Overview", "Doctor Management", "Patient Management", "Admin accounts"])
