@@ -1,4 +1,5 @@
 import streamlit as st
+from datetime import datetime
 
 def basetab_layout_():
     """
@@ -11,7 +12,6 @@ def basetab_layout_():
         [data-testid*="stInputInstructions"] { display: none !important; }
 
         /* Layout Spacing: 10/90/10 Ratio */
-        
         .block-container {
             padding-left: 1.5rem !important;
             padding-right: 1.5rem !important;
@@ -46,12 +46,7 @@ def basetab_layout_():
             font-weight: 800 !important;
             letter-spacing: 0.5px !important;
         }
-        
 
-        /* ----------------------------------------------------
-                   colors (Active ) = #010736 
-        ---------------------------------------------------- */
-        
         /* Active Tab Color Accents */
         [aria-selected="true"] * { color: #010736 !important; }
         [data-baseweb="tab-highlight"] {
@@ -60,9 +55,7 @@ def basetab_layout_():
             border-radius: 3px !important;
         }
 
-        /* ----------------------------------------------------
-           PRIMARY BUTTON STYLING 
-           ---------------------------------------------------- */
+        /* PRIMARY BUTTON STYLING */
         button[data-testid="baseButton-primary"] {
             background-color: #010736 !important;
             color: #ffffff !important;
@@ -71,9 +64,6 @@ def basetab_layout_():
             height: 48px !important;
             border-radius: 8px !important;
         }
-
-        /* when not clicked just hover color: #22396F */
-
         button[data-testid="baseButton-primary"]:hover {
             background-color: #22396F !important;
             color: #ffffff !important;
@@ -96,7 +86,6 @@ def basetab_layout_():
 def render_top_navbar(user_name, user_role, user_email, badge_label="System Access", badge_color="#0ea5e9"):
     """Renders the unified top navigation bar, night-light, and settings popover."""
     
-    # 1. Handle Night Light State & Injection globally
     if "night_light" not in st.session_state:
         st.session_state.night_light = False
     if "night_light_warmth" not in st.session_state:
@@ -106,7 +95,6 @@ def render_top_navbar(user_name, user_role, user_email, badge_label="System Acce
         opacity = st.session_state.night_light_warmth / 100
         st.markdown(f'<div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(255, 145, 0, {opacity}); pointer-events: none; z-index: 999999;"></div>', unsafe_allow_html=True)
 
-    # 2. Render Header
     with st.container(border=False):
         h_col1, h_col2 = st.columns([5.5, 4.5], vertical_alignment="center")
         
@@ -150,7 +138,6 @@ def render_top_navbar(user_name, user_role, user_email, badge_label="System Acce
                     st.divider()
                     st.markdown(f"<div style='text-align: center; color: #007979; font-size: 0.85rem; margin-bottom: 10px;'>{user_email}</div>", unsafe_allow_html=True)
                     if st.button("⏻ Log Out", type="primary", use_container_width=True, key="nav_btn_logout"):
-                        # Universal Secure Session Purge
                         auth_artifacts = [
                             "authenticated", "jwt_token", "user_role", "user_id", "user_profile",
                             "logged_in_patient_id", "active_patient", "cdss_inference_payload", "ai_inference_completed"
@@ -159,3 +146,93 @@ def render_top_navbar(user_name, user_role, user_email, badge_label="System Acce
                             if artifact in st.session_state:
                                 del st.session_state[artifact]
                         st.rerun()
+
+def render_clinician_governance_panel(target_doc, current_admin_email):
+    is_selected = target_doc is not None
+    if is_selected:
+        st.markdown(f"Selected Clinician: **{target_doc['name']}** (`{target_doc['license_number']}`)")
+    else:
+        st.caption("👈 *Click on a row in the table above to select a clinician for action.*")
+
+    action_col1, action_col2, action_col3 = st.columns(3)
+    with action_col1:
+        failed_count = target_doc.get('failed_attempts', 0) if is_selected else 0
+        st.markdown(f"**Failed Logins:** `{failed_count}/5`")
+        is_locked = target_doc.get("is_locked", False) if is_selected else False
+        unlock_disabled = not (is_selected and is_locked)
+        if st.button("🔓 Clear Lockout", width="stretch", disabled=unlock_disabled, key="btn_doc_unlock"):
+            target_doc["is_locked"] = False
+            target_doc["failed_attempts"] = 0
+            st.session_state.doctor_audit_logs.insert(0, {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "target_doctor": target_doc["name"],
+                "event_type": "ACCOUNT_UNLOCKED", "actor": f"Admin ({current_admin_email})",
+                "ip_address": "127.0.0.1", "details": "Administrator manually cleared login threshold."
+            })
+            st.success(f"Unlocked account for {target_doc['name']}.")
+            st.rerun()
+
+    with action_col2:
+        st.markdown("**Credential Reset:**")
+        if st.button("🔑 Dispatch Reset OTP", width="stretch", disabled=not is_selected, key="btn_doc_otp"):
+            st.success(f"One-time reset dispatched to {target_doc.get('email', 'clinician')}.")
+
+    with action_col3:
+        token_ver = target_doc.get('token_version', 1) if is_selected else 0
+        st.markdown(f"**Session Version:** `v{token_ver}`")
+        if st.button("🛑 Revoke Active Sessions", width="stretch", disabled=not is_selected, key="btn_doc_revoke"):
+            target_doc["token_version"] = token_ver + 1
+            st.warning(f"All active bearer tokens invalidated for {target_doc['name']}.")
+            st.rerun()
+
+def render_patient_governance_panel(target_patient, current_admin_email):
+    is_selected = target_patient is not None
+    if is_selected:
+        st.markdown(f"Selected Patient: **{target_patient['name']}** (`{target_patient['email']}`)")
+    else:
+        st.caption("👈 *Click on a row in the table above to select a patient for action.*")
+
+    act_col1, act_col2, act_col3 = st.columns(3)
+    with act_col1:
+        failed_count = target_patient.get('failed_attempts', 0) if is_selected else 0
+        st.markdown(f"**Lockout Control:** `{failed_count}/5` failed attempts")
+        if st.button("🔓 Reset Failed Attempts", width="stretch", disabled=not is_selected or failed_count == 0, key="btn_pat_reset"):
+            target_patient["failed_attempts"] = 0
+            target_patient["is_locked"] = False
+            st.success(f"Counter reset for {target_patient['name']}.")
+            st.rerun()
+    with act_col2:
+        st.markdown("**Credential Dispatch:**")
+        if st.button("🔑 Dispatch Secure Reset Link", width="stretch", disabled=not is_selected, key="btn_pat_link"):
+            st.success(f"Reset link sent to {target_patient['email']}.")
+    with act_col3:
+        st.markdown("**Access Freeze:**")
+        is_active = target_patient.get("is_active", True) if is_selected else True
+        if is_active:
+            if st.button("🛑 Suspend Account", width="stretch", disabled=not is_selected, key="btn_pat_suspend"):
+                target_patient["is_active"] = False
+                st.warning(f"Account suspended for {target_patient['name']}.")
+                st.rerun()
+        else:
+            if st.button("✅ Restore Access", width="stretch", disabled=not is_selected, key="btn_pat_restore"):
+                target_patient["is_active"] = True
+                st.success(f"Access restored for {target_patient['name']}.")
+                st.rerun()
+
+def render_admin_governance_panel(target_e):
+    is_selected = target_e is not None
+    if is_selected:
+        st.markdown(f"Selected Staff: **{target_e['name']}** (`{target_e['emp_id']}`)")
+    else:
+        st.caption("👈 *Click on a row in the table above to select an employee for action.*")
+
+    e_col1, e_col2 = st.columns(2)
+    with e_col1:
+        if st.button("📧 Dispatch Password Reset OTP", width="stretch", disabled=not is_selected, key="emp_otp"):
+            st.success(f"Temporary password reset link sent to {target_e['email']}.")
+    with e_col2:
+        status = target_e.get("status", "Active") if is_selected else "Active"
+        toggle_state = "Suspend Account Access" if status == "Active" else "Restore Account Access"
+        btn_type = "secondary" if status == "Active" else "primary"
+        if st.button(f"🛑 {toggle_state}", width="stretch", type=btn_type, disabled=not is_selected, key="emp_toggle"):
+            target_e["status"] = "Suspended" if status == "Active" else "Active"
+            st.rerun()
