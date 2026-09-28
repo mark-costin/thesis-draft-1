@@ -1,68 +1,103 @@
-import sys
-from pathlib import Path
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-
+import plotly.graph_objects as go
+from datetime import datetime, timezone
+import uuid
 
 # ==============================================================================
-# LIVE PATIENT CONTEXT (VIA API AUTH)
+# 1. PAGE SETUP & DATA BOOTSTRAP
 # ==============================================================================
-profile = st.session_state.get("user_profile", {})
-pid = st.session_state.get("user_id", "UNKNOWN")
+st.set_page_config(layout="wide", page_title="Lucerna Medica | Patient Portal")
 
-# 1. Resilient Name Parsing
-raw_name = profile.get("name")
-first_name = profile.get("first_name", "")
-last_name = profile.get("last_name", "")
+user_avatar_url = "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=150&q=80"
 
-if first_name or last_name:
-    display_name = f"{last_name}, {first_name}".strip(", ")
-elif raw_name:
-    display_name = raw_name
-else:
-    # Ultimate fallback to the username/email used during login
-    display_name = st.session_state.get("username", f"Patient {pid}")
+# --- Core State Initialization (Synced with doctorpage.py) ---
+if "theme_mode" not in st.session_state: st.session_state.theme_mode = "light"
+if "logged_in_patient_id" not in st.session_state: st.session_state.logged_in_patient_id = "PAT-9912"
 
-# 2. Resilient Age Parsing
-age = "--"
-dob_str = profile.get("date_of_birth") or profile.get("dob")
-if dob_str:
-    try:
-        # Handles both YYYY-MM-DD and MM/DD/YYYY
-        if "-" in dob_str:
-            dob = datetime.strptime(dob_str, "%Y-%m-%d")
-        else:
-            dob = datetime.strptime(dob_str, "%m/%d/%Y")
-            
-        today = datetime.today()
-        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-    except (ValueError, TypeError):
-        pass
-
-# 3. Construct Active Patient Context
-active_pat = {
-    "id": pid,
-    "name": display_name,
-    "age": age,
-    "sex": profile.get("gender", profile.get("sex", "Not Specified")),
-    "bmi": profile.get("bmi", "--"),
-    "latest_bp": profile.get("latest_bp", "--"),
-    "resting_hr": profile.get("resting_hr", "--"),
-    "primary_cond": profile.get("primary_cond", "General Health"),
-    "prior_directive": profile.get("prior_directive", "No active clinical directives recorded."),
-    "active_rx": profile.get("active_rx", ""),
-    "allergies": profile.get("allergies", "None"),
-    "risk_flag": profile.get("risk_flag", "Stable"),
-    "fam_history": profile.get("fam_history", [])
-}
-
-# Ensure global queue structure exists for cross-view state sharing
 if "today_queue" not in st.session_state:
-    st.session_state.today_queue = []
+    st.session_state.today_queue = [
+        {"queue_no": "Q-01", "time_in": "08:15 AM", "id": "PAT-9912", "name": "Alvarez, Carlos T.", "urgency": "🔴 Critical", "complaint": "Severe chest pain radiating to left arm.", "lifecycle_status": "In Waiting Room"},
+        {"queue_no": "Q-02", "time_in": "08:42 AM", "id": "PAT-4421", "name": "Santos, Sofia M.", "urgency": "🟡 Priority", "complaint": "Palpitations and dizziness upon standing.", "lifecycle_status": "In Waiting Room"},
+        {"queue_no": "Q-03", "time_in": "09:05 AM", "id": "PAT-1102", "name": "Mason, Justin L.", "urgency": "🟢 Routine", "complaint": "Post-op medication adjustment.", "lifecycle_status": "In Waiting Room"}
+    ]
+
+if "master_patients" not in st.session_state:
+    st.session_state.master_patients = [
+        {"id": "PAT-9912", "name": "Alvarez, Carlos T.", "age": 58, "sex": "Male", "bmi": 29.4, "latest_bp": "165/95", "resting_hr": 92, "primary_cond": "Cardiovascular Disease & Hypertension", "prior_directive": "Titrated Amlodipine to 10mg on Aug 15. Restrict sodium to <2000mg/day.", "active_rx": "Amlodipine 10mg OD, Atorvastatin 20mg ON", "allergies": "Penicillin", "risk_flag": "High Risk Flagged", "fam_history": ["CVD (Father: Early onset <55)", "Hypertension (Mother)"]},
+        {"id": "PAT-4421", "name": "Santos, Sofia M.", "age": 42, "sex": "Female", "bmi": 24.1, "latest_bp": "118/76", "resting_hr": 105, "primary_cond": "Type 2 Diabetes Mellitus", "prior_directive": "Increase Metformin to 1000mg BID. Monitor fasting glucose.", "active_rx": "Metformin 1000mg BID", "allergies": "Sulfa Drugs", "risk_flag": "Awaiting Review", "fam_history": ["Type 2 Diabetes (Mother)"]},
+        {"id": "PAT-1102", "name": "Mason, Justin L.", "age": 65, "sex": "Male", "bmi": 26.8, "latest_bp": "125/80", "resting_hr": 68, "primary_cond": "COPD & Mild Cognitive Impairment", "prior_directive": "Continue inhaler regimen. Schedule follow-up pulmonary function test.", "active_rx": "Albuterol Inhaler PRN, Donepezil 5mg OD", "allergies": "None", "risk_flag": "Stable", "fam_history": ["Dementia (Father)", "Depression (Sister)"]},
+    ]
+
+# Resolve Active Authenticated Patient
+active_pat = next((p for p in st.session_state.master_patients if p["id"] == st.session_state.logged_in_patient_id), st.session_state.master_patients[0])
+pid = active_pat["id"]
 
 # ==============================================================================
-# TOP NAVIGATION HEADER & CLINIC STATUS CARD
+# 2. MASTER DUAL-THEME ENGINE (Mirrored from Clinician Workspace)
+# ==============================================================================
+if st.session_state.theme_mode == "dark":
+    theme_css = """
+    .stApp { background-color: #091540 !important; color: #E5E5E5 !important; }
+    h1, h2, h3, h4, h5, h6, p, span, label, legend, li { color: #E5E5E5 !important; }
+    [data-testid="stVerticalBlockBorderWrapper"], fieldset[data-testid="stFieldset"] {
+        background-color: #232F72 !important; border: 1px solid #2F578A !important; border-radius: 14px !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important; padding: 20px 24px !important; margin-bottom: 18px !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] > div, fieldset[data-testid="stFieldset"] > div { background: transparent !important; border: none !important; }
+    div[style*="background-color: #ffffff"], .metric-card {
+        background-color: #2F578A !important; border: 1px solid rgba(229, 229, 229, 0.25) !important; border-radius: 12px !important;
+    }
+    [data-baseweb="base-input"], [data-baseweb="select"] > div { background-color: #091540 !important; border: 1px solid #2F578A !important; border-radius: 8px !important; }
+    [data-baseweb="base-input"] input { color: #E5E5E5 !important; }
+    [data-baseweb="tab-list"] { border-bottom: 2px solid #2F578A !important; }
+    """
+else:
+    theme_css = """
+    .stApp { background-color: #f1f5f9 !important; color: #0f172a !important; }
+    h1, h2, h3, h4, h5, h6, p, span, label, legend, li { color: #0f172a !important; }
+    [data-testid="stVerticalBlockBorderWrapper"], fieldset[data-testid="stFieldset"], div[style*="background-color: #ffffff"] {
+        background-color: #ffffff !important; border: 1px solid #e0e4e8 !important; border-radius: 14px !important;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05) !important; padding: 20px 24px !important; margin-bottom: 18px !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] > div, fieldset[data-testid="stFieldset"] > div { background: transparent !important; border: none !important; }
+    [data-baseweb="base-input"], [data-baseweb="select"] > div { background-color: #f8fafc !important; border: 1px solid #cbd5e1 !important; border-radius: 8px !important; }
+    [data-baseweb="base-input"] input { color: #0f172a !important; }
+    [data-baseweb="tab-list"] { border-bottom: 2px solid #e2e8f0 !important; }
+    """
+
+st.markdown(f"""
+    <style>
+    {theme_css}
+    [data-testid*="stInputInstructions"] {{ display: none !important; }}
+    .block-container {{ padding-left: 1.5rem !important; padding-right: 1.5rem !important; padding-top: 1.5rem !important; max-width: 96% !important; }}
+    [data-baseweb="tab-list"] {{ display: flex !important; width: 100% !important; margin-top: 10px !important; margin-bottom: 24px !important; gap: 14px !important; }}
+    button[data-baseweb="tab"], [data-testid="stTab"] {{ flex: 1 1 0 !important; height: 62px !important; padding: 14px 20px !important; justify-content: center !important; background-color: transparent !important; }}
+    button[data-baseweb="tab"]:hover {{ background-color: rgba(0, 121, 121, 0.08) !important; }}
+    button[data-baseweb="tab"] p, button[data-baseweb="tab"] span, [data-testid="stTab"] * {{ font-size: 1.35rem !important; font-weight: 800 !important; letter-spacing: 0.5px !important; }}
+    [aria-selected="true"] * {{ color: #007979 !important; }}
+    [data-baseweb="tab-highlight"] {{ background-color: #007979 !important; height: 4px !important; border-radius: 3px !important; }}
+    button[data-testid="baseButton-primary"] {{ background-color: #007979 !important; color: #ffffff !important; border: none !important; font-weight: 700 !important; height: 48px !important; border-radius: 8px !important; }}
+    button[data-testid="baseButton-primary"]:hover {{ background-color: #005f5f !important; color: #ffffff !important; }}
+    </style>
+""", unsafe_allow_html=True)
+
+# ==============================================================================
+# 3. SIDEBAR EVALUATOR SANDBOX (THESIS DEMO MODE)
+# ==============================================================================
+with st.sidebar:
+    with st.expander("🛠️ Evaluator Sandbox (Demo Mode)", expanded=False):
+        st.caption("Simulate authentic patient logins across different chronic cohorts for thesis evaluation.")
+        pat_options_map = {f"{p['name']} ({p['id']})": p['id'] for p in st.session_state.master_patients}
+        current_selection_label = next((k for k, v in pat_options_map.items() if v == st.session_state.logged_in_patient_id), list(pat_options_map.keys())[0])
+        
+        selected_sandbox_pat = st.selectbox("Switch Active Patient", options=list(pat_options_map.keys()), index=list(pat_options_map.keys()).index(current_selection_label), key="sandbox_patient_selector")
+        st.session_state.logged_in_patient_id = pat_options_map[selected_sandbox_pat]
+        if st.button("🔄 Apply Account Switch", use_container_width=True):
+            st.rerun()
+
+# ==============================================================================
+# 4. TOP NAVIGATION HEADER & CLINIC STATUS CARD
 # ==============================================================================
 _, col_main, _ = st.columns([5, 90, 5], gap="small")
 
@@ -75,32 +110,21 @@ with col_main:
         with h2:
             sc1, sc2 = st.columns([3, 1], vertical_alignment="center")
             with sc1:
-                first_name_only = active_pat["name"].split(',')[1].strip() if ',' in active_pat["name"] else active_pat["name"]
-                st.markdown(f"<div style='background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 12px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; text-align: center;'>🟢 {first_name_only} 👤</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 12px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; text-align: center;'>🟢 {active_pat['name'].split(',')[0]} 👤</div>", unsafe_allow_html=True)
             with sc2:
                 with st.popover("⚙️"):
                     st.markdown(f"**Signed in as:** `{pid}`")
                     st.divider()
                     if st.button("Dark Mode", use_container_width=True, key=f"btn_dark_{pid}"): st.session_state.theme_mode = "dark"; st.rerun()
-                    if st.button("Light Mode", use_container_width=True, key=f"btn_light_{pid}"): st.session_state.theme_mode = "light"; st.rerun()
-                    st.divider()
-                    
+                    if st.button("Light Mode", use_container_width=True, key=f"btn_light_{pid}"):
+                        st.divider()
                     if st.button("🚪 Log Out", use_container_width=True, key=f"btn_logout_{pid}"):
-                        # Complete session wipe for security compliance and RBAC enforcement
-                        auth_artifacts = [
-                            "authenticated", "jwt_token", "user_role", "user_id", "user_profile", 
-                            "logged_in_patient_id", "active_patient", "cdss_inference_payload", "ai_inference_completed"
-                        ]
-                        for artifact in auth_artifacts:
-                            if artifact in st.session_state:
-                                del st.session_state[artifact]
-                                
+                        st.session_state.logged_in_patient_id = "PAT-9912"
                         st.rerun()
 
     # Welcome Card & Live Clinic Status
     with st.container(border=True):
-        first_name_welcome = active_pat["name"].split(',')[1].strip() if ',' in active_pat["name"] else active_pat["name"]
-        st.markdown(f"## Welcome back, {first_name_welcome} 👋")
+        st.markdown(f"## Welcome back, {active_pat['name'].split(',')[1].strip()} 👋")
         
         d1, d2, d3, d4 = st.columns([1, 1, 1, 2])
         d1.metric("Patient ID", pid)
@@ -111,7 +135,7 @@ with col_main:
         with d4:
             st.markdown("<div style='font-size: 0.85rem; font-weight: 600; color: #64748b; margin-bottom: 4px;'>Live Clinic Status</div>", unsafe_allow_html=True)
             if in_queue:
-                st.markdown(f"<div style='background:#d1fae5; color:#059669; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.9rem;'>🎫 Ticket: {in_queue.get('queue_no', '--')} · {in_queue.get('lifecycle_status', 'In Waiting Room')}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background:#d1fae5; color:#059669; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.9rem;'>🎫 Ticket: {in_queue['queue_no']} · {in_queue['lifecycle_status']}</div>", unsafe_allow_html=True)
             else:
                 st.markdown("<div style='background:rgba(148, 163, 184, 0.1); color:#64748b; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.9rem;'>⚪ Not Currently Checked In</div>", unsafe_allow_html=True)
 
@@ -119,7 +143,7 @@ with col_main:
         st.markdown(f"""
         <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;'>
             <div><b>Primary Condition Tracked:</b> <span style='background: rgba(0, 121, 121, 0.1); color: #007979; padding: 4px 10px; border-radius: 12px; font-weight: 700; margin-left: 8px;'>🩺 {active_pat['primary_cond']}</span></div>
-            <div><b>Primary Clinician:</b> Lucerna Medica Assignee</div>
+            <div><b>Primary Clinician:</b> Dr. Maria A. Velasco, MD, PhD (Cardiology)</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -127,7 +151,9 @@ with col_main:
     # 5. FIVE-TAB ARCHITECTURE
     # ==============================================================================
     tab_care, tab_vitals, tab_checkin, tab_family, tab_settings = st.tabs(["My Care Plan", "Vitals Log & History", "Pre-Visit Check-In", "Family Tree & Hereditary", "Account Settings"])
-    
+    # --------------------------------------------------------------------------
+    # TAB 1: MY CARE PLAN & DOCTOR'S DIRECTIVES
+    # --------------------------------------------------------------------------
     # --------------------------------------------------------------------------
     # TAB 1: MY CARE PLAN (RESTRUCTURED: ACTION PLAN & CLINICAL DIRECTIVES)
     # --------------------------------------------------------------------------
@@ -137,15 +163,15 @@ with col_main:
         # CARD 1: ATTENDING PHYSICIAN ASSESSMENT & ORDERS
         with st.container(border=True):
             st.markdown("### 🩺 Attending Physician Directives")
-            st.caption("Official orders and clinical impressions issued by your attending clinician.")
+            st.caption("Official orders and clinical impressions issued by Dr. Maria A. Velasco, MD, PhD.")
             
-            st.info(f"**Latest Clinical Order:** {active_pat['prior_directive']}")
+            st.info(f"**Latest Clinical Order:** {active_pat.get('prior_directive', 'No active clinical directives recorded.')}")
             
             c_meta1, c_meta2 = st.columns(2)
             with c_meta1:
-                st.markdown(f"**Primary Focus:** `{active_pat['primary_cond']}`")
+                st.markdown(f"**Primary Focus:** `{active_pat.get('primary_cond', 'General Health')}`")
             with c_meta2:
-                st.markdown(f"**Current Care Classification:** `{active_pat['risk_flag']}`")
+                st.markdown(f"**Current Care Classification:** `{active_pat.get('risk_flag', 'Stable')}`")
 
         # CARD 2: "HOW TO GET BETTER" - LIFESTYLE & PREVENTIVE ACTION PLAN
         with st.container(border=True):
@@ -211,8 +237,9 @@ with col_main:
             with col_m1:
                 st.markdown("#### 📅 Next Follow-Up Checkpoint")
                 st.markdown("""
-                * **Scheduled Visit:** TBD (In-Clinic)
+                * **Scheduled Visit:** October 15, 2026 (In-Clinic)
                 * **Pre-Visit Requirement:** Fasting blood test 48 hours prior.
+                * **Assigned Doctor:** Dr. Maria A. Velasco
                 """)
             with col_m2:
                 st.markdown("#### 🚨 When to Seek Emergency Care")
@@ -242,6 +269,8 @@ with col_main:
             v2.metric("Resting Heart Rate", f"{active_pat.get('resting_hr', 'N/A')} bpm")
             v3.metric("BMI", active_pat.get("bmi", "N/A"))
             v4.metric("Risk Status", active_pat.get("risk_flag", "N/A"))
+            
+        # ... (Keep the "Interactive Longitudinal Trend Chart" code below this) ...
 
     # --------------------------------------------------------------------------
     # TAB 3: PRE-VISIT CHECK-IN
@@ -249,20 +278,22 @@ with col_main:
     with tab_checkin:
         st.write("")
         
+        in_queue = next((q for q in st.session_state.today_queue if q["id"] == pid), None)
+        
         if in_queue:
             with st.container(border=True):
                 st.markdown(f"""
                 <div style="text-align: center; padding: 20px;">
                     <div style="font-size: 1.2rem; font-weight: 600; color: #64748b; margin-bottom: 8px;">Your Digital Clinic Ticket</div>
-                    <div style="font-size: 5rem; font-weight: 800; color: #007979; line-height: 1; margin-bottom: 12px;">{in_queue.get('queue_no', '--')}</div>
-                    <div style="font-size: 1.1rem; font-weight: 700; background: #fef3c7; color: #d97706; display: inline-block; padding: 6px 16px; border-radius: 20px;">Status: {in_queue.get('lifecycle_status', 'In Waiting Room')}</div>
-                    <div style="margin-top: 16px; font-size: 0.95rem; color: #64748b;">Check-in time: {in_queue.get('time_in', '--')}</div>
+                    <div style="font-size: 5rem; font-weight: 800; color: #007979; line-height: 1; margin-bottom: 12px;">{in_queue['queue_no']}</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; background: #fef3c7; color: #d97706; display: inline-block; padding: 6px 16px; border-radius: 20px;">Status: {in_queue['lifecycle_status']}</div>
+                    <div style="margin-top: 16px; font-size: 0.95rem; color: #64748b;">Check-in time: {in_queue['time_in']}</div>
                 </div>
                 """, unsafe_allow_html=True)
-                st.info("Please remain in the digital waiting room. Your clinician will call you shortly.")
+                st.info("Please remain in the digital waiting room. Dr. Velasco will call you shortly.")
                 
                 if st.button("❌ Cancel Check-In / Withdraw", key=f"cancel_q_{pid}", use_container_width=True):
-                    st.session_state.today_queue = [q for q in st.session_state.today_queue if q.get("id") != pid]
+                    st.session_state.today_queue = [q for q in st.session_state.today_queue if q["id"] != pid]
                     st.rerun()
         else:
             with st.container(border=True):
@@ -348,7 +379,6 @@ with col_main:
                 
                 if submit_fam:
                     st.success("Variables submitted successfully. Your FHRS score will be updated upon doctor review.")
-
     # --------------------------------------------------------------------------
     # TAB 5: ACCOUNT SETTINGS
     # --------------------------------------------------------------------------
@@ -364,8 +394,7 @@ with col_main:
                 st.markdown("##### Personal Details")
                 st.text_input("Full Name", value=active_pat["name"], disabled=True, help="Contact clinic administration to change registered name.")
                 st.text_input("Biological Sex", value=active_pat["sex"], disabled=True)
-                st.text_input("Contact Number", value=profile.get("contact_number", ""), disabled=True)
-                st.text_input("Email Address", value=profile.get("email", ""), disabled=True)
+                st.text_input("Contact Number", placeholder="09XX-XXX-XXXX")
                 
             with col_set2:
                 st.markdown("##### Security & Authentication")
@@ -376,3 +405,4 @@ with col_main:
                     
                     if st.form_submit_button("Update Password", type="primary", use_container_width=True):
                         st.success("✅ Password update request submitted to system administration.")
+                        

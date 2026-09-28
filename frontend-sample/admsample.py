@@ -1,32 +1,239 @@
-import sys
-import os
-
-# 1. Add the parent 'frontend' folder to the Python path so 'views' is recognized
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# 2. Standard imports
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import re
 from datetime import datetime
 
-# 3. Import the shared UI template (Relative import handles subfolder execution)
-try:
-    from styles import basetab_layout_, render_top_navbar
-except ImportError:
-    from views.styles import basetab_layout_, render_top_navbar
-
 # ==============================================================================
-# PAGE CONFIGURATION & THEME INITIALIZATION
+# PAGE CONFIGURATION & STATE INITIALIZATION
 # ==============================================================================
-# This block must only appear exactly once
-st.set_page_config(layout="wide", page_title="Lucerna Medica | Admin Portal")
-
-# Inject the shared custom UI tab & button styling
-basetab_layout_()
+st.set_page_config(layout="wide")
 
 user_avatar_url = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
+
+
+# --- THEME & NIGHT LIGHT STATE ---
+if "theme_mode" not in st.session_state:
+    st.session_state.theme_mode = "light"
+
+if "night_light" not in st.session_state:
+    st.session_state.night_light = False
+
+if "night_light_warmth" not in st.session_state:
+    st.session_state.night_light_warmth = 8 
+
+# ==============================================================================
+# UNIFIED DUAL-THEME ENGINE
+# ==============================================================================
+if st.session_state.theme_mode == "dark":
+    theme_css = """
+    /* App Canvas & Global Typography */
+    .stApp { background-color: #091540 !important; color: #E5E5E5 !important; }
+    h1, h2, h3, h4, h5, h6, p, span, label { color: #E5E5E5 !important; }
+
+    /* Level 1: Primary Div Containers (Main sections, Forms, Directory Wrappers) */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #232F72 !important;
+        border: 1px solid #2F578A !important;
+        border-radius: 14px !important;
+        padding: 20px 24px !important;
+        margin-bottom: 18px !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] > div {
+        background-color: transparent !important;
+    }
+
+    /* Level 2: Elevated Mini Cards (Top Metrics, Lower Column Cards) */
+    div[style*="background-color: #ffffff"], 
+    div[style*="background-color: rgb(255, 255, 255)"],
+    [data-testid="column"] div[data-testid="stVerticalBlockBorderWrapper"],
+    .metric-card {
+        background-color: #2F578A !important;
+        border: 1px solid rgba(229, 229, 229, 0.25) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+    }
+
+    /* Text & Metric Overrides for High Contrast */
+    .stApp [style*="color: #1e293b"], .stApp [style*="color:#1e293b"],
+    .stApp [style*="color: #111"], .stApp [style*="color:#111"],
+    .stApp [style*="color: #111827"], .stApp [style*="color:#111827"],
+    .stApp [style*="color: #334155"], .stApp [style*="color:#334155"],
+    .stApp [style*="color: #0f172a"], .stApp [style*="color:#0f172a"] {
+        color: #E5E5E5 !important;
+    }
+    .stApp [style*="color: #64748b"], .stApp [style*="color:#64748b"],
+    .stApp [style*="color: #475569"], .stApp [style*="color:#475569"],
+    .stApp [style*="color: #4b5563"], .stApp [style*="color:#4b5563"] {
+        color: #B0B8C4 !important;
+    }
+
+    /* Form Input Fields */
+    [data-baseweb="base-input"], 
+    [data-baseweb="input"], 
+    [data-baseweb="select"] > div {
+        background-color: #091540 !important;
+        border: 1px solid #2F578A !important;
+        border-radius: 8px !important;
+    }
+    [data-baseweb="base-input"] input, 
+    [data-baseweb="input"] input {
+        color: #E5E5E5 !important;
+        -webkit-text-fill-color: #E5E5E5 !important;
+    }
+
+    /* Popovers & Secondary Action Buttons */
+    div[data-testid="stPopoverBody"] {
+        background-color: #232F72 !important;
+        border: 1px solid #2F578A !important;
+    }
+    .stApp button[data-testid="baseButton-secondary"] {
+        background-color: #232F72 !important;
+        border: 1px solid #2F578A !important;
+        color: #E5E5E5 !important;
+    }
+    .stApp button[data-testid="baseButton-secondary"] p { color: #E5E5E5 !important; }
+    [data-baseweb="tab-list"] { border-bottom: 2px solid #2F578A !important; }
+    """
+else:
+    theme_css = """
+    /* App Canvas & Typography */
+    .stApp { background-color: #f1f5f9 !important; color: #0f172a !important; }
+    h1, h2, h3, h4, h5, h6, p, span, label { color: #0f172a !important; }
+
+    /* Light Containers & Cards */
+    div[data-testid="stVerticalBlockBorderWrapper"],
+    div[style*="background-color: #ffffff"], 
+    div[style*="background-color: rgb(255, 255, 255)"],
+    .metric-card {
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 14px !important;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05) !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        padding: 20px 24px !important;
+        margin-bottom: 18px !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] > div {
+        background-color: transparent !important;
+    }
+
+    /* Light Inputs */
+    [data-baseweb="base-input"], 
+    [data-baseweb="input"], 
+    [data-baseweb="select"] > div {
+        background-color: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 8px !important;
+    }
+    [data-baseweb="base-input"] input, 
+    [data-baseweb="input"] input {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+    }
+
+    /* Popovers & Secondary Buttons */
+    div[data-testid="stPopoverBody"] {
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+    }
+    .stApp button[data-testid="baseButton-secondary"] {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #1e293b !important;
+    }
+    .stApp button[data-testid="baseButton-secondary"] p { color: #1e293b !important; }
+    [data-baseweb="tab-list"] { border-bottom: 2px solid #e2e8f0 !important; }
+    """
+night_light_html = ""
+if st.session_state.night_light:
+    opacity = st.session_state.night_light_warmth / 100
+    night_light_html = f'<div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(255, 145, 0, {opacity}); pointer-events: none; z-index: 999999;"></div>'
+
+
+# ==============================================================================
+# MASTER, CSS THEME & NIGHT LIGHT INJECTION
+# ==============================================================================
+
+st.markdown(f"""
+    <style>
+    {theme_css}
+
+    [data-testid*="stInputInstructions"] {{ display: none !important; }}
+
+    /* Layout Spacing: 10/90/10 Ratio */
+    .block-container {{
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+        padding-top: 1.5rem !important;
+        max-width: 96% !important;
+    }}
+
+    /* TAB BAR */
+    [data-baseweb="tab-list"] {{
+        display: flex !important;
+        width: 100% !important;
+        margin-top: 10px !important;
+        margin-bottom: 24px !important;
+        gap: 14px !important;
+    }}
+    button[data-baseweb="tab"], [data-testid="stTab"] {{
+        flex: 1 1 0 !important;
+        height: 62px !important;
+        padding: 14px 20px !important;
+        justify-content: center !important;
+        background-color: transparent !important;
+    }}
+    button[data-baseweb="tab"]:hover {{
+        background-color: rgba(0, 121, 121, 0.08) !important;
+    }}
+    button[data-baseweb="tab"] p, 
+    button[data-baseweb="tab"] span, 
+    [data-testid="stTab"] * {{
+        font-size: 1.45rem !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.5px !important;
+    }}
+    [aria-selected="true"] * {{ color: #007979 !important; }}
+
+    /* TAB HIGHLIGHT */
+    [data-baseweb="tab-highlight"] {{
+        background-color: #007979 !important;
+        height: 4px !important;
+        border-radius: 3px !important;
+    }}
+
+    /* PRIMARY BUTTON */
+    button[data-testid="baseButton-primary"] {{
+        background-color: #007979 !important;
+        color: #ffffff !important;
+        border: none !important;
+        font-weight: 700 !important;
+        height: 48px !important;
+        border-radius: 8px !important;
+    }}
+    button[data-testid="baseButton-primary"]:hover {{
+        background-color: #005f5f !important;
+        color: #ffffff !important;
+    }}
+
+    div[data-testid="stSelectbox"] input {{ caret-color: transparent !important; cursor: pointer !important; }}
+
+    div[data-testid="stPopover"] > button [data-testid="stIconEmoji"] {{
+        display: inline-block !important; width: 38px !important; height: 38px !important; min-width: 38px !important;
+        border-radius: 50% !important; border: 2px solid #007979 !important;
+        background-image: url('{user_avatar_url}') !important; background-size: cover !important;
+        background-position: center !important; background-repeat: no-repeat !important;
+        font-size: 0 !important; color: transparent !important; margin-right: 12px !important; margin-bottom: 0 !important;
+    }}
+    div[data-testid="stPopover"] > button p {{ margin: 0 !important; text-align: left !important; line-height: 1.2 !important; font-size: 0.85rem !important; }}
+    div[data-testid="stPopover"] > button p strong {{ font-size: 1rem !important; font-weight: 800 !important; }}
+    </style>
+    {night_light_html}
+""", unsafe_allow_html=True)
+
 
 # ==============================================================================
 # CALLBACKS, HELPERS & REUSABLE COMPONENTS
@@ -55,84 +262,148 @@ def is_valid_gmail(text: str) -> bool:
     return bool(re.match(r"^[a-zA-Z0-9._%+-]+@gmail\.com$", text.strip()))
 
 def is_valid_admin_email(text: str) -> bool:
+    """Accepts any valid hospital or institutional email."""
     return bool(re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", text.strip()))
 
 # --- REUSABLE CLINICIAN COMPONENT ---
 def render_clinician_governance_panel(target_doc, current_admin_email):
+    """Reusable UI component for clinician account governance actions."""
     is_selected = target_doc is not None
+
     if is_selected:
         st.markdown(f"Selected Clinician: **{target_doc['name']}** (`{target_doc['license_number']}`)")
     else:
         st.caption("👈 *Click on a row in the table above to select a clinician for action.*")
 
     action_col1, action_col2, action_col3 = st.columns(3)
+    
     with action_col1:
-        failed_count = target_doc.get('failed_attempts', 0) if is_selected else 0
+        failed_count = target_doc['failed_attempts'] if is_selected else 0
         st.markdown(f"**Failed Logins:** `{failed_count}/5`")
+        
         is_locked = target_doc.get("is_locked", False) if is_selected else False
         unlock_disabled = not (is_selected and is_locked)
-        if st.button("🔓 Clear Lockout", width="stretch", disabled=unlock_disabled, key="btn_doc_unlock"):
+        
+        if st.button("🔓 Clear Lockout", use_container_width=True, disabled=unlock_disabled, key=f"btn_doc_unlock_{target_doc['doctor_id'] if is_selected else 'none'}"):
             target_doc["is_locked"] = False
             target_doc["failed_attempts"] = 0
             st.session_state.doctor_audit_logs.insert(0, {
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "target_doctor": target_doc["name"],
-                "event_type": "ACCOUNT_UNLOCKED", "actor": f"Admin ({current_admin_email})",
-                "ip_address": "127.0.0.1", "details": "Administrator manually cleared login threshold."
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "target_doctor": target_doc["name"],
+                "event_type": "ACCOUNT_UNLOCKED",
+                "actor": f"Admin ({current_admin_email})",
+                "ip_address": "127.0.0.1",
+                "details": "Administrator manually cleared login threshold."
             })
             st.success(f"Unlocked account for {target_doc['name']}.")
             st.rerun()
 
     with action_col2:
         st.markdown("**Credential Reset:**")
-        if st.button("🔑 Dispatch Reset OTP", width="stretch", disabled=not is_selected, key="btn_doc_otp"):
-            st.success(f"One-time reset dispatched to {target_doc.get('email', 'clinician')}.")
+        if st.button("🔑 Dispatch Reset OTP", use_container_width=True, disabled=not is_selected, key=f"btn_doc_otp_{target_doc['doctor_id'] if is_selected else 'none'}"):
+            st.session_state.doctor_audit_logs.insert(0, {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "target_doctor": target_doc["name"],
+                "event_type": "PASSWORD_RESET_DISPATCHED",
+                "actor": f"Admin ({current_admin_email})",
+                "ip_address": "127.0.0.1",
+                "details": f"Temporary OTP sent to {target_doc['email']}."
+            })
+            st.success(f"One-time reset dispatched to {target_doc['email']}.")
 
     with action_col3:
-        token_ver = target_doc.get('token_version', 1) if is_selected else 0
+        token_ver = target_doc['token_version'] if is_selected else 0
         st.markdown(f"**Session Version:** `v{token_ver}`")
-        if st.button("🛑 Revoke Active Sessions", width="stretch", disabled=not is_selected, key="btn_doc_revoke"):
-            target_doc["token_version"] = token_ver + 1
+        if st.button("🛑 Revoke Active Sessions", use_container_width=True, disabled=not is_selected, key=f"btn_doc_revoke_{target_doc['doctor_id'] if is_selected else 'none'}"):
+            target_doc["token_version"] += 1
+            st.session_state.doctor_audit_logs.insert(0, {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "target_doctor": target_doc["name"],
+                "event_type": "SESSION_REVOKED",
+                "actor": f"Admin ({current_admin_email})",
+                "ip_address": "127.0.0.1",
+                "details": f"Token version incremented to {target_doc['token_version']}."
+            })
             st.warning(f"All active bearer tokens invalidated for {target_doc['name']}.")
             st.rerun()
 
 # --- REUSABLE PATIENT COMPONENT ---
 def render_patient_governance_panel(target_patient, current_admin_email):
+    """Reusable UI component for patient account governance actions."""
     is_selected = target_patient is not None
+
     if is_selected:
         st.markdown(f"Selected Patient: **{target_patient['name']}** (`{target_patient['email']}`)")
     else:
         st.caption("👈 *Click on a row in the table above to select a patient for action.*")
 
     act_col1, act_col2, act_col3 = st.columns(3)
+    
     with act_col1:
-        failed_count = target_patient.get('failed_attempts', 0) if is_selected else 0
+        failed_count = target_patient['failed_attempts'] if is_selected else 0
         st.markdown(f"**Lockout Control:** `{failed_count}/5` failed attempts")
-        if st.button("🔓 Reset Failed Attempts", width="stretch", disabled=not is_selected or failed_count == 0, key="btn_pat_reset"):
+        if st.button("🔓 Reset Failed Attempts", use_container_width=True, disabled=not is_selected or failed_count == 0, key=f"btn_pat_reset_{target_patient['patient_id'] if is_selected else 'none'}"):
             target_patient["failed_attempts"] = 0
             target_patient["is_locked"] = False
+            st.session_state.patient_audit_logs.insert(0, {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "target_patient": target_patient["name"],
+                "event_type": "LOCKOUT_CLEARED",
+                "actor": f"Admin ({current_admin_email})",
+                "ip_address": "127.0.0.1",
+                "details": "Administrator manually cleared failed login counter."
+            })
             st.success(f"Counter reset for {target_patient['name']}.")
             st.rerun()
+    
     with act_col2:
         st.markdown("**Credential Dispatch:**")
-        if st.button("🔑 Dispatch Secure Reset Link", width="stretch", disabled=not is_selected, key="btn_pat_link"):
+        if st.button("🔑 Dispatch Secure Reset Link", use_container_width=True, disabled=not is_selected, key=f"btn_pat_link_{target_patient['patient_id'] if is_selected else 'none'}"):
+            st.session_state.patient_audit_logs.insert(0, {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "target_patient": target_patient["name"],
+                "event_type": "PASSWORD_RESET_DISPATCHED",
+                "actor": f"Admin ({current_admin_email})",
+                "ip_address": "127.0.0.1",
+                "details": f"Temporary reset token sent to {target_patient['email']}."
+            })
             st.success(f"Reset link sent to {target_patient['email']}.")
+
     with act_col3:
         st.markdown("**Access Freeze:**")
-        is_active = target_patient.get("is_active", True) if is_selected else True
+        is_active = target_patient["is_active"] if is_selected else True
         if is_active:
-            if st.button("🛑 Suspend Account", width="stretch", disabled=not is_selected, key="btn_pat_suspend"):
+            if st.button("🛑 Suspend Account", use_container_width=True, disabled=not is_selected, key=f"btn_pat_suspend_{target_patient['patient_id'] if is_selected else 'none'}"):
                 target_patient["is_active"] = False
+                st.session_state.patient_audit_logs.insert(0, {
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "target_patient": target_patient["name"],
+                    "event_type": "ACCOUNT_SUSPENDED",
+                    "actor": f"Admin ({current_admin_email})",
+                    "ip_address": "127.0.0.1",
+                    "details": "Account deactivated by administrator."
+                })
                 st.warning(f"Account suspended for {target_patient['name']}.")
                 st.rerun()
         else:
-            if st.button("✅ Restore Access", width="stretch", disabled=not is_selected, key="btn_pat_restore"):
+            if st.button("✅ Restore Access", use_container_width=True, disabled=not is_selected, key=f"btn_pat_restore_{target_patient['patient_id'] if is_selected else 'none'}"):
                 target_patient["is_active"] = True
+                st.session_state.patient_audit_logs.insert(0, {
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "target_patient": target_patient["name"],
+                    "event_type": "ACCOUNT_RESTORED",
+                    "actor": f"Admin ({current_admin_email})",
+                    "ip_address": "127.0.0.1",
+                    "details": "Account reactivated by administrator."
+                })
                 st.success(f"Access restored for {target_patient['name']}.")
                 st.rerun()
 
 # --- REUSABLE ADMIN COMPONENT ---
 def render_admin_governance_panel(target_e):
+    """Reusable UI component for staff & admin account governance actions."""
     is_selected = target_e is not None
+
     if is_selected:
         st.markdown(f"Selected Staff: **{target_e['name']}** (`{target_e['emp_id']}`)")
     else:
@@ -140,18 +411,20 @@ def render_admin_governance_panel(target_e):
 
     e_col1, e_col2 = st.columns(2)
     with e_col1:
-        if st.button("📧 Dispatch Password Reset OTP", width="stretch", disabled=not is_selected, key="emp_otp"):
+        if st.button("📧 Dispatch Password Reset OTP", use_container_width=True, disabled=not is_selected, key=f"emp_otp_{target_e['emp_id'] if is_selected else 'none'}"):
             st.success(f"Temporary password reset link sent to {target_e['email']}.")
+            
     with e_col2:
-        status = target_e.get("status", "Active") if is_selected else "Active"
+        status = target_e["status"] if is_selected else "Active"
         toggle_state = "Suspend Account Access" if status == "Active" else "Restore Account Access"
         btn_type = "secondary" if status == "Active" else "primary"
-        if st.button(f"🛑 {toggle_state}", width="stretch", type=btn_type, disabled=not is_selected, key="emp_toggle"):
+        
+        if st.button(f"🛑 {toggle_state}", use_container_width=True, type=btn_type, disabled=not is_selected, key=f"emp_toggle_{target_e['emp_id'] if is_selected else 'none'}"):
             target_e["status"] = "Suspended" if status == "Active" else "Active"
             st.rerun()
 
 # ==============================================================================
-# GLOBALS & DIRECTORIES INITIALIZATION
+# GLOBALS & DIRECTORIES
 # ==============================================================================
 SPECIALIZATION_OPTIONS = ["General Physician", "Internal Medicine", "Cardiology", "Pulmonology", "Psychiatry"]
 SUFFIX_OPTIONS = ["None", "MD", "PhD", "DO", "MD, PhD", "Jr.", "Sr.", "III"]
@@ -162,45 +435,148 @@ for key in ["doc_first_name", "doc_middle_name", "doc_last_name", "doc_address",
 
 if "form_success" not in st.session_state: st.session_state.form_success = None
 
-# Initialize empty tables for live database population
-if "doctor_directory" not in st.session_state: st.session_state.doctor_directory = []
-if "doctor_audit_logs" not in st.session_state: st.session_state.doctor_audit_logs = []
-if "employee_directory" not in st.session_state: st.session_state.employee_directory = []
-if "patient_directory" not in st.session_state: st.session_state.patient_directory = []
-if "patient_audit_logs" not in st.session_state: st.session_state.patient_audit_logs = []
+if "doctor_directory" not in st.session_state:
+    st.session_state.doctor_directory = [
+        {"doctor_id": 1, "name": "Smith, John M.", "license_number": "PRC 1234567", "specialization": "General Physician", "email": "doc.smith@gmail.com", "contact_number": "0917-123-4567", "hospital_affiliation": "Lucerna Central", "is_verified": True, "failed_attempts": 0, "is_locked": False, "mfa_enrolled": True, "token_version": 1},
+        {"doctor_id": 2, "name": "Velasco, Maria A.", "license_number": "PRC 8839210", "specialization": "Cardiology", "email": "m.velasco@gmail.com", "contact_number": "0920-987-6543", "hospital_affiliation": "Heart Center", "is_verified": False, "failed_attempts": 4, "is_locked": True, "mfa_enrolled": False, "token_version": 3}
+    ]
+
+if "doctor_audit_logs" not in st.session_state:
+    st.session_state.doctor_audit_logs = [
+        {"timestamp": "2026-09-10 09:12:15", "target_doctor": "Smith, John M.", "event_type": "LOGIN_SUCCESS", "actor": "Dr. Smith (doc_smith)", "ip_address": "192.168.1.45", "details": "MFA Challenge Passed (Authenticator App)"},
+        {"timestamp": "2026-09-10 08:30:00", "target_doctor": "Velasco, Maria A.", "event_type": "ACCOUNT_LOCKED", "actor": "SYSTEM_GUARD", "ip_address": "112.198.72.10", "details": "Threshold exceeded: 4 consecutive invalid password submissions."},
+        {"timestamp": "2026-09-09 14:22:11", "target_doctor": "Smith, John M.", "event_type": "VERIFICATION_APPROVED", "actor": "Admin (admin.system)", "ip_address": "10.0.4.12", "details": "PRC credential verified against national registry."}
+    ]
+
+if "active_admin_id" not in st.session_state:
+    st.session_state.active_admin_id = "EMP-001"
+
+if "employee_directory" not in st.session_state:
+    st.session_state.employee_directory = [
+        {"emp_id": "EMP-001", "name": "First Name", "role": "System Admin", "email": "admin.system@lucernamedica.com", "status": "Active"},
+        {"emp_id": "EMP-002", "name": "Connor, Sarah", "role": "IT Support", "email": "s.connor@lucernamedica.com", "status": "Active"},
+        {"emp_id": "EMP-003", "name": "Wright, Marcus", "role": "Compliance Auditor", "email": "m.wright@lucernamedica.com", "status": "Suspended"}
+    ]
+
+if "patient_directory" not in st.session_state:
+    st.session_state.patient_directory = [
+        {"patient_id": 1, "name": "Mason, Justin L.", "email": "j.mason@gmail.com", "contact_number": "0917-555-0198", "dob": "1992-08-14", "registered_at": "2026-09-09 08:15:22", "pending_method": "None", "dispatch_count": 1, "is_verified": True, "is_active": True, "hipaa_consent": True, "hipaa_consent_at": "2026-09-09 08:20:11", "failed_attempts": 0, "is_locked": False},
+        {"patient_id": 2, "name": "Reyes, Sofia M.", "email": "sofia.reyes99@gmail.com", "contact_number": "0920-111-4432", "dob": "1999-11-02", "registered_at": "2026-09-10 10:05:00", "pending_method": "Pending Phone OTP", "dispatch_count": 2, "is_verified": False, "is_active": False, "hipaa_consent": False, "hipaa_consent_at": None, "failed_attempts": 0, "is_locked": False},
+        {"patient_id": 3, "name": "Bautista, Carlos T.", "email": "cbautista.tech@gmail.com", "contact_number": "0918-999-8877", "dob": "1985-03-22", "registered_at": "2026-09-01 14:10:00", "pending_method": "None", "dispatch_count": 1, "is_verified": True, "is_active": False, "hipaa_consent": True, "hipaa_consent_at": "2026-09-01 14:15:00", "failed_attempts": 5, "is_locked": True}
+    ]
+
+if "patient_audit_logs" not in st.session_state:
+    st.session_state.patient_audit_logs = [
+        {"timestamp": "2026-09-09 08:20:11", "target_patient": "Mason, Justin L.", "event_type": "HIPAA_CONSENT_ACCEPTED", "actor": "System Registration", "ip_address": "112.201.44.9", "details": "Terms and Data Privacy Act acknowledged."},
+        {"timestamp": "2026-09-10 10:15:00", "target_patient": "Reyes, Sofia M.", "event_type": "OTP_DISPATCHED", "actor": "Twilio Gateway", "ip_address": "System", "details": "SMS OTP re-sent (Attempt 2)."},
+        {"timestamp": "2026-09-10 11:30:22", "target_patient": "Bautista, Carlos T.", "event_type": "ACCOUNT_SUSPENDED", "actor": "System Guard", "ip_address": "System", "details": "Suspended due to 5 consecutive failed logins."}
+    ]
+
+
+
+# Resolve active admin object dynamically
+active_admin = next((e for e in st.session_state.employee_directory if e["emp_id"] == st.session_state.active_admin_id), st.session_state.employee_directory[0])
+user_name = active_admin["name"]
+user_role = active_admin["role"]
+user_email = active_admin["email"]
+
+# Helper callback for the sandbox
+def _sync_sandbox_admin():
+    selected_label = st.session_state.sandbox_admin_selector
+    # Re-map the label back to the exact EMP ID
+    emp_options_map_local = {f"{e['name']} ({e['role']})": e['emp_id'] for e in st.session_state.employee_directory}
+    st.session_state.active_admin_id = emp_options_map_local.get(selected_label)
 
 # ==============================================================================
-# LIVE AUTHENTICATED USER CONTEXT
+# SIDEBAR EVALUATOR SANDBOX (THESIS DEMO MODE)
 # ==============================================================================
-profile = st.session_state.get("user_profile", {})
-user_name = f"{profile.get('first_name', 'System')} {profile.get('last_name', 'Admin')}".strip()
-user_role = st.session_state.get("user_role", "ADMIN")
-user_email = profile.get("email", "admin.system@lucernamedica.com")
-
+with st.sidebar:
+    with st.expander("🛠️ Evaluator Sandbox (Demo Mode)", expanded=False):
+        st.caption("Instantly switch active administrative roles to demonstrate RBAC (Role-Based Access Control) and system logging during thesis evaluation.")
+        
+        # Create mapping of "Name (Role)" -> "ID"
+        emp_options_map = {f"{e['name']} ({e['role']})": e['emp_id'] for e in st.session_state.employee_directory}
+        current_selection_label = next((k for k, v in emp_options_map.items() if v == st.session_state.active_admin_id), list(emp_options_map.keys())[0])
+        
+        st.selectbox(
+            "Switch Active Administrator",
+            options=list(emp_options_map.keys()),
+            index=list(emp_options_map.keys()).index(current_selection_label),
+            key="sandbox_admin_selector",
+            on_change=_sync_sandbox_admin
+        )
+count_admins = 1
+count_patients = len(st.session_state.patient_directory)
+count_doctors = len(st.session_state.doctor_directory)
+count_verified_docs = sum(1 for d in st.session_state.doctor_directory if d.get("is_verified", False))
 
 _, col_main, _ = st.columns([5, 90, 5], gap="small")
 
-
 with col_main:
-    # --- RENDER UNIFIED TOP NAVIGATION ---
-    render_top_navbar(
-        user_name=user_name, 
-        user_role=user_role, 
-        user_email=user_email,
-        badge_label="Admin Access",
-        badge_color="#0ea5e9"
-    )
+    # --- ADMIN HEADER (NO BORDER) ---
+    with st.container(border=False):
+        h_col1, h_col2 = st.columns([5.5, 4.5], vertical_alignment="center")
+        
+        with h_col1:
+            st.markdown(f"""
+            <div style="padding: 4px 0px;">
+                <h3 style="margin: 0; font-size: 1.85rem; font-weight: 800;">{user_name} <span style="font-size: 1.1rem; font-weight: 600;">&nbsp;|&nbsp; {user_role}</span></h3>
+                <div style="font-size: 0.95rem; font-weight: 600; margin-top: 4px;">✔ Lucerna Medica Administration • {user_email}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with h_col2:
+            badge_col, btn1, btn2, btn3 = st.columns([2.5, 1, 1, 2.5])
+            with badge_col:
+                st.markdown("""<div style="background: #0ea5e920; color: #0ea5e9; padding: 8px 0px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; text-align: center; margin-top: 5px;">🛡️ Superuser Access</div>""", unsafe_allow_html=True)
+            with btn1:
+                st.button("☰", use_container_width=True)
+            with btn2:
+                with st.popover("🔔", use_container_width=True):
+                    st.markdown("##### Notifications")
+                    st.caption("No new alerts at this time.")
+            with btn3:
+                with st.popover("⚙️ Settings", use_container_width=True):
+                    st.markdown("<div style='font-size: 0.95rem; font-weight: 600; margin-bottom: 5px;'>Theme</div>", unsafe_allow_html=True)
+                    t_col1, t_col2 = st.columns(2)
+                    dark_type = "primary" if st.session_state.theme_mode == "dark" else "secondary"
+                    light_type = "primary" if st.session_state.theme_mode == "light" else "secondary"
+                    if t_col1.button("DARK", type=dark_type, use_container_width=True):
+                        st.session_state.theme_mode = "dark"
+                        st.rerun()
+                    if t_col2.button("LIGHT", type=light_type, use_container_width=True):
+                        st.session_state.theme_mode = "light"
+                        st.rerun()
+                    
+                    st.markdown("<div style='font-size: 0.95rem; font-weight: 600; margin-top: 10px; margin-bottom: 5px;'>Night light</div>", unsafe_allow_html=True)
+                    nl_col1, nl_col2 = st.columns(2)
+                    on_type = "primary" if st.session_state.night_light else "secondary"
+                    off_type = "secondary" if st.session_state.night_light else "primary"
+                    if nl_col1.button("ON", type=on_type, use_container_width=True, key="nl_on"):
+                        st.session_state.night_light = True
+                        st.rerun()
+                    if nl_col2.button("OFF", type=off_type, use_container_width=True, key="nl_off"):
+                        st.session_state.night_light = False
+                        st.rerun()
+                    if st.session_state.night_light:
+                        st.session_state.night_light_warmth = st.slider("Warmth Intensity", 5, 25, st.session_state.night_light_warmth)
+                    st.divider()
+                    st.markdown(f"<div style='text-align: center; color: #007979; font-size: 0.85rem; margin-bottom: 10px;'>{user_email}</div>", unsafe_allow_html=True)
+                    if st.button("⏻ Log Out", type="primary", use_container_width=True):
+                        st.session_state.authenticated = False
+                        st.rerun()
+
     tab_Overview, tab_form, tab_patient, tab_Admin = st.tabs(["Overview", "Doctor Management", "Patient Management", "Admin accounts"])
 
     # --------------------------------------------------------------------------
-    # TAB 1: METRIC DASHBOARD & TELEMETRY
+    # TAB 1: METRIC DASHBOARD
     # --------------------------------------------------------------------------
     with tab_Overview:
         st.write("")
         docs = st.session_state.doctor_directory
         pats = st.session_state.patient_directory
 
-        c_admin = max(len(st.session_state.employee_directory), 1)
+        c_admin = 1
         c_doc = len(docs)
         c_pat = len(pats)
         total_accounts = c_admin + c_doc + c_pat
@@ -231,48 +607,46 @@ with col_main:
 
             hero_col, grid_col = st.columns([1.3, 2], gap="medium")
             with hero_col:
-                st.markdown(f"""
-                <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 12px; padding: 22px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.02); height: 295px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <span style="font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color:#0f172a;">Master Directory</span>
-                            <span style="background: #e6f4f1; color: #007979; font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 20px;">LIVE REGISTRY</span>
-                        </div>
-                        <div style="font-size: 4.8rem; font-weight: 800; line-height: 1; letter-spacing: -1.5px; margin: 4px 0; color:#0f172a;">{total_accounts}</div>
-                        <div style="font-size: 1.1rem; font-weight: 600; color:#0f172a;">Total Provisioned Identities</div>
-                    </div>
-                    <div>
-                        <div style="display: flex; height: 10px; border-radius: 6px; overflow: hidden; background: #e2e8f0; margin-bottom: 10px;">
-                            <div style="width: {pct_doc:.1f}%; background-color: #007979;" title="Doctors: {c_doc}"></div>
-                            <div style="width: {pct_pat:.1f}%; background-color: #0284c7;" title="Patients: {c_pat}"></div>
-                            <div style="width: {pct_adm:.1f}%; background-color: #64748b;" title="Admins: {c_admin}"></div>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; color:#0f172a;">
-                            <span style="display: flex; align-items: center; gap: 5px;"><span style="height: 8px; width: 8px; border-radius: 50%; background: #007979;"></span> {c_doc} Clinicians</span>
-                            <span style="display: flex; align-items: center; gap: 5px;"><span style="height: 8px; width: 8px; border-radius: 50%; background: #0284c7;"></span> {c_pat} Patients</span>
-                            <span style="display: flex; align-items: center; gap: 5px;"><span style="height: 8px; width: 8px; border-radius: 50%; background: #64748b;"></span> {c_admin} Admin</span>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"""<div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 12px; padding: 22px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.02); height: 295px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;">Master Directory</span>
+            <span style="background: #e6f4f1; color: #007979; font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 20px;">LIVE REGISTRY</span>
+            </div>
+            <div style="font-size: 4.8rem; font-weight: 800; line-height: 1; letter-spacing: -1.5px; margin: 4px 0;">{total_accounts}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">Total Provisioned Identities</div>
+            </div>
+            <div>
+            <div style="display: flex; height: 10px; border-radius: 6px; overflow: hidden; background: #e2e8f0; margin-bottom: 10px;">
+            <div style="width: {pct_doc:.1f}%; background-color: #007979;" title="Doctors: {c_doc}"></div>
+            <div style="width: {pct_pat:.1f}%; background-color: #0284c7;" title="Patients: {c_pat}"></div>
+            <div style="width: {pct_adm:.1f}%; background-color: #64748b;" title="Admins: {c_admin}"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600;">
+            <span style="display: flex; align-items: center; gap: 5px;"><span style="height: 8px; width: 8px; border-radius: 50%; background: #007979;"></span> {c_doc} Clinicians</span>
+            <span style="display: flex; align-items: center; gap: 5px;"><span style="height: 8px; width: 8px; border-radius: 50%; background: #0284c7;"></span> {c_pat} Patients</span>
+            <span style="display: flex; align-items: center; gap: 5px;"><span style="height: 8px; width: 8px; border-radius: 50%; background: #64748b;"></span> {c_admin} Admin</span>
+            </div>
+            </div>
+            </div>""", unsafe_allow_html=True)
 
             with grid_col:
                 sub_r1_c1, sub_r1_c2 = st.columns(2, gap="medium")
                 with sub_r1_c1:
                     st.markdown(f"""
                     <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.02); height: 138px; display: flex; flex-direction: column; justify-content: space-between;">
-                        <div style="font-size: 0.95rem; font-weight: 600; color:#0f172a;">Doctors</div>
-                        <div style="font-size: 2.5rem; font-weight: 800; line-height: 1; color:#0f172a;">{c_doc}</div>
-                        <div style="font-size: 0.85rem; font-weight: 600; color: #007979;">🟢 {doc_ver}/{c_doc if c_doc else 1} Verified PRC Licenses</div>
+                        <div style="font-size: 0.95rem; font-weight: 600;">Doctors</div>
+                        <div style="font-size: 2.5rem; font-weight: 800; line-height: 1;">{c_doc}</div>
+                        <div style="font-size: 0.85rem; font-weight: 600; color: #007979;">🟢 {doc_ver}/{c_doc} Verified PRC Licenses</div>
                     </div>
                     """, unsafe_allow_html=True)
                 with sub_r1_c2:
                     hipaa_badge_color = "#10b981" if pat_hipaa_pct >= 80 else "#f59e0b"
                     st.markdown(f"""
                     <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.02); height: 138px; display: flex; flex-direction: column; justify-content: space-between;">
-                        <div style="font-size: 0.95rem; font-weight: 600; color:#0f172a;">Patients</div>
-                        <div style="font-size: 2.5rem; font-weight: 800; line-height: 1; color:#0f172a;">{c_pat}</div>
-                        <div style="font-size: 0.85rem; font-weight: 600; color: {hipaa_badge_color};">📝 {pat_hipaa_pct}% Consented ({pat_hipaa}/{c_pat if c_pat else 1})</div>
+                        <div style="font-size: 0.95rem; font-weight: 600;">Patients</div>
+                        <div style="font-size: 2.5rem; font-weight: 800; line-height: 1;">{c_pat}</div>
+                        <div style="font-size: 0.85rem; font-weight: 600; color: {hipaa_badge_color};">📝 {pat_hipaa_pct}% Consented ({pat_hipaa}/{c_pat})</div>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -282,16 +656,16 @@ with col_main:
                 with sub_r2_c1:
                     st.markdown(f"""
                     <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.02); height: 138px; display: flex; flex-direction: column; justify-content: space-between;">
-                        <div style="font-size: 0.95rem; font-weight: 600; color:#0f172a;">System Admins</div>
-                        <div style="font-size: 2.5rem; font-weight: 800; line-height: 1; color:#0f172a;">{c_admin}</div>
+                        <div style="font-size: 0.95rem; font-weight: 600;">System Admins</div>
+                        <div style="font-size: 2.5rem; font-weight: 800; line-height: 1;">{c_admin}</div>
                         <div style="font-size: 0.85rem; font-weight: 600; color: #0284c7;">🛡️ Full Audit Privileges</div>
                     </div>
                     """, unsafe_allow_html=True)
                 with sub_r2_c2:
                     st.markdown(f"""
                     <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.02); height: 138px; display: flex; flex-direction: column; justify-content: space-between;">
-                        <div style="font-size: 0.95rem; font-weight: 600; color:#0f172a;">Active Sessions</div>
-                        <div style="font-size: 2.5rem; font-weight: 800; line-height: 1; color:#0f172a;">{active_sessions}</div>
+                        <div style="font-size: 0.95rem; font-weight: 600;">Active Sessions</div>
+                        <div style="font-size: 2.5rem; font-weight: 800; line-height: 1;">{active_sessions}</div>
                         <div style="font-size: 0.85rem; font-weight: 600; color: #10b981;">⚡ Valid Token Versions</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -303,8 +677,8 @@ with col_main:
                 pend_color = "#f59e0b" if pending_ver > 0 else "#10b981"
                 st.markdown(f"""
                 <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 15px 18px; height: 110px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div style="font-size: 0.88rem; font-weight: 600; color:#0f172a;">Pending Queue</div>
-                    <div style="font-size: 2rem; font-weight: 800; line-height: 1; color:#0f172a;">{pending_ver}</div>
+                    <div style="font-size: 0.88rem; font-weight: 600;">Pending Queue</div>
+                    <div style="font-size: 2rem; font-weight: 800; line-height: 1;">{pending_ver}</div>
                     <div style="font-size: 0.8rem; font-weight: 600; color: {pend_color};">⏳ Awaiting OTP/Verification</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -314,8 +688,8 @@ with col_main:
                 lock_text = f"⚠️ {locked_acc} Account Locked" if locked_acc > 0 else "✔ 0 Brute-Force Flags"
                 st.markdown(f"""
                 <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 15px 18px; height: 110px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div style="font-size: 0.88rem; font-weight: 600; color:#0f172a;">Account Lockouts</div>
-                    <div style="font-size: 2rem; font-weight: 800; line-height: 1; color:#0f172a;">{locked_acc}</div>
+                    <div style="font-size: 0.88rem; font-weight: 600;">Account Lockouts</div>
+                    <div style="font-size: 2rem; font-weight: 800; line-height: 1;">{locked_acc}</div>
                     <div style="font-size: 0.8rem; font-weight: 600; color: {lock_color};">{lock_text}</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -324,8 +698,8 @@ with col_main:
                 mfa_color = "#10b981" if mfa_pct == 100 else "#f59e0b"
                 st.markdown(f"""
                 <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 15px 18px; height: 110px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div style="font-size: 0.88rem; font-weight: 600; color:#0f172a;">MFA Adoption</div>
-                    <div style="font-size: 2rem; font-weight: 800; line-height: 1; color:#0f172a;">{mfa_pct}%</div>
+                    <div style="font-size: 0.88rem; font-weight: 600;">MFA Adoption</div>
+                    <div style="font-size: 2rem; font-weight: 800; line-height: 1;">{mfa_pct}%</div>
                     <div style="font-size: 0.8rem; font-weight: 600; color: {mfa_color};">🔐 Clinician 2FA Rate</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -333,19 +707,19 @@ with col_main:
             with gov_c4:
                 st.markdown(f"""
                 <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 15px 18px; height: 110px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div style="font-size: 0.88rem; font-weight: 600; color:#0f172a;">Compliance Index</div>
-                    <div style="font-size: 2rem; font-weight: 800; line-height: 1; color:#0f172a;">100%</div>
+                    <div style="font-size: 0.88rem; font-weight: 600;">Compliance Index</div>
+                    <div style="font-size: 2rem; font-weight: 800; line-height: 1;">100%</div>
                     <div style="font-size: 0.8rem; font-weight: 600; color: #10b981;">🛡️ HIPAA/DPA Compliant</div>
                 </div>
                 """, unsafe_allow_html=True)
 
-        st.markdown("<div style='height: 22px;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='height: 22px;'></div>", unsafe_allow_html=True)
             
         with st.container(border=True):
             st.markdown("##### **INTAKE ACTIVITY OVER TIME**")
             st.caption("Activity tracking for Patients, Doctors, and Admin's accounts")
             chart_data = pd.DataFrame({"Patients": [0, 0, 20, 0, 0, 0, 0], "Doctors": [10, 0, 200, 0, 300, 30, 0], "Admins": [10, 0, 0, 300, 0, 0, 0]}, index=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
-            st.line_chart(chart_data, width="stretch")
+            st.line_chart(chart_data, height=350, use_container_width=True)
 
         current_date = datetime.now().strftime("%m/%d/%Y")
         st.markdown(f"<div style='text-align: right; font-size: 0.9rem; margin-bottom: 8px;'>Last Updated: {current_date}</div>", unsafe_allow_html=True)
@@ -370,7 +744,7 @@ with col_main:
                     gauge={'axis': {'range': [0, max_conn], 'tickmode': 'linear', 'tick0': 0, 'dtick': 2, 'tickwidth': 1.5, 'ticks': "inside", 'tickfont': {'size': 13}}, 'bar': {'color': "#007979"}, 'borderwidth': 0, 'steps': [{'range': [0, 6], 'color': 'rgba(16, 185, 129, 0.2)'}, {'range': [6, 8], 'color': 'rgba(245, 158, 11, 0.2)'}, {'range': [8, 10], 'color': 'rgba(239, 68, 68, 0.2)'}], 'threshold': {'line': {'color': "#b91c1c", 'width': 3}, 'thickness': 0.8, 'value': 9}}
                 ))
                 fig.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=15), paper_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig, width="stretch", config={'displayModeBar': False})
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         with cluster_col:
             with st.container(border=True):
@@ -388,7 +762,7 @@ with col_main:
                     {"pid": "1XXX.XX.X.X4", "sockets": 0, "connected": False, "timeout": False}
                 ]
                 processed_records = [{"PID": node["pid"], "Active Sockets": node["sockets"], "Status": evaluate_node_status(node["connected"], node["timeout"], node["sockets"])} for node in raw_nodes_data]
-                st.dataframe(pd.DataFrame(processed_records), width="stretch", hide_index=True, height=180)
+                st.dataframe(pd.DataFrame(processed_records), use_container_width=True, hide_index=True, height=180)
                 st.markdown("""
                 <div style="display: flex; justify-content: center; gap: 12px; margin-top: 14px;">
                     <div style="display: flex; align-items: center; gap: 8px; padding: 6px 16px; border: 1px solid #334155; border-radius: 20px; font-size: 0.85rem; font-weight: 600;"><span style="height: 10px; width: 10px; border-radius: 50%; background-color: #28a745; display: inline-block;"></span>Active</div>
@@ -407,14 +781,14 @@ with col_main:
                 else: db_status, status_icon, status_color, sub_label, latency_text, latency_badge_color = "UP", "✔", "#16a34a", "SELECT 1", f"{db_latency_ms} ms (Optimal)", "#16a34a"
 
                 st.markdown(f"""
-                <div style="text-align: center; margin: 16px 0 10px 0;"><div style="font-size: 2.2rem; font-weight: 800; color: {status_color}; display: inline-flex; align-items: center; gap: 8px;"><span>{status_icon}</span> {db_status}</div><div style="font-size: 0.85rem; font-weight: 600; margin-top: -2px; color:#0f172a;">({sub_label})</div></div>
-                <div style="border-top: 1px solid rgba(148, 163, 184, 0.2); padding-top: 14px; margin-top: 14px;"><div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.92rem; margin-bottom: 8px; color:#0f172a;"><span>Database Latency:</span><strong style="color: {latency_badge_color};">{latency_text}</strong></div><div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.92rem; color:#0f172a;"><span>Recycle State:</span><span style="font-weight: 600;">{db_recycle_state}</span></div></div>
+                <div style="text-align: center; margin: 16px 0 10px 0;"><div style="font-size: 2.2rem; font-weight: 800; color: {status_color}; display: inline-flex; align-items: center; gap: 8px;"><span>{status_icon}</span> {db_status}</div><div style="font-size: 0.85rem; font-weight: 600; margin-top: -2px;">({sub_label})</div></div>
+                <div style="border-top: 1px solid rgba(148, 163, 184, 0.2); padding-top: 14px; margin-top: 14px;"><div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.92rem; margin-bottom: 8px;"><span>Database Latency:</span><strong style="color: {latency_badge_color};">{latency_text}</strong></div><div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.92rem;"><span>Recycle State:</span><span style="font-weight: 600;">{db_recycle_state}</span></div></div>
                 """, unsafe_allow_html=True)
                 
         with grid_row1_col2:
             with st.container(border=True):
                 st.markdown("##### 🗘 **Idempotency Replay Hit Rate**")
-                st.markdown("""<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 138px;"><div style="font-size: 3.6rem; font-weight: 800; line-height: 1; color:#0f172a;">0</div><div style="font-size: 1rem; font-weight: 600; margin-top: 12px; color:#0f172a;">Replays Short-circuited</div></div>""", unsafe_allow_html=True)
+                st.markdown("""<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 138px;"><div style="font-size: 3.6rem; font-weight: 800; line-height: 1;">0</div><div style="font-size: 1rem; font-weight: 600; margin-top: 12px;">Replays Short-circuited</div></div>""", unsafe_allow_html=True)
 
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         grid_row2_col1, grid_row2_col2 = st.columns(2, gap="large")
@@ -424,14 +798,14 @@ with col_main:
                 st.markdown("##### 🌐 **HTTP Traffic & Error Distribution**")
                 fig_donut = go.Figure(data=[go.Pie(labels=["2xx Success", "4xx Client Errors", "5xx Server Exceptions"], values=[888, 338, 3], hole=0.62, marker=dict(colors=["#10b981", "#f59e0b", "#ef4444"]), textinfo="percent", hoverinfo="label+value+percent", showlegend=True)])
                 fig_donut.update_layout(height=200, margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5, font=dict(size=11)), paper_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig_donut, width="stretch", config={'displayModeBar': False})
+                st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
 
         with grid_row2_col2:
             with st.container(border=True):
                 st.markdown("##### 🛡️ **Security Middleware Status**")
                 st.markdown("""
-                <div style="text-align: center; margin: 10px 0 14px 0;"><div style="font-size: 2.2rem; font-weight: 800; color: #16a34a; display: inline-flex; align-items: center; gap: 8px;">✔ ACTIVE</div><div style="font-size: 0.85rem; font-weight: 600; margin-top: -4px; color:#0f172a;">All Filters Intercepting</div></div>
-                <div style="border-top: 1px solid rgba(148, 163, 184, 0.2); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem; color:#0f172a;"><div style="display: flex; align-items: center; gap: 8px;"><span style="color: #16a34a; font-weight: bold;">✔</span> CORS Headers Active</div><div style="display: flex; align-items: center; gap: 8px;"><span style="color: #16a34a; font-weight: bold;">✔</span> Strict Security Headers (CSP, X-Frame-Options)</div><div style="display: flex; align-items: center; gap: 8px;"><span style="color: #16a34a; font-weight: bold;">✔</span> Sanitization Filters</div></div>
+                <div style="text-align: center; margin: 10px 0 14px 0;"><div style="font-size: 2.2rem; font-weight: 800; color: #16a34a; display: inline-flex; align-items: center; gap: 8px;">✔ ACTIVE</div><div style="font-size: 0.85rem; font-weight: 600; margin-top: -4px;">All Filters Intercepting</div></div>
+                <div style="border-top: 1px solid rgba(148, 163, 184, 0.2); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem;"><div style="display: flex; align-items: center; gap: 8px;"><span style="color: #16a34a; font-weight: bold;">✔</span> CORS Headers Active</div><div style="display: flex; align-items: center; gap: 8px;"><span style="color: #16a34a; font-weight: bold;">✔</span> Strict Security Headers (CSP, X-Frame-Options)</div><div style="display: flex; align-items: center; gap: 8px;"><span style="color: #16a34a; font-weight: bold;">✔</span> Sanitization Filters</div></div>
                 """, unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------
@@ -504,7 +878,7 @@ with col_main:
             with col_sec3: cred_ttl = st.selectbox("Credential TTL", options=["24 Hours", "48 Hours", "7 Days"], index=0)
 
             st.divider()
-            submit_btn = st.button("Submit Provisioning", type="primary", width="stretch")
+            submit_btn = st.button("Submit Provisioning", type="primary", use_container_width=True)
             
         if submit_btn:
             errors = []
@@ -518,7 +892,7 @@ with col_main:
             if not is_valid_phone_format(emergency_contact): errors.append("Emergency Contact Number must be exactly 11 digits.")
             
             formatted_prc = f"PRC {prc_license_raw.strip()}"
-            if any(doc.get("license_number") == formatted_prc for doc in st.session_state.doctor_directory):
+            if any(doc["license_number"] == formatted_prc for doc in st.session_state.doctor_directory):
                 errors.append(f"License Conflict: `{formatted_prc}` is already registered.")
 
             if errors:
@@ -573,7 +947,7 @@ with col_main:
 
                 clinician_selection = st.dataframe(
                     display_df[["name", "license_number", "specialization", "contact_number", "email", "hospital_affiliation", "status_badge", "lock_badge"]],
-                    width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row",
+                    use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row",
                     column_config={
                         "name": st.column_config.TextColumn("Clinician Name", width="medium"), "license_number": st.column_config.TextColumn("License Number", width="small"),
                         "specialization": st.column_config.TextColumn("Specialization", width="medium"), "contact_number": st.column_config.TextColumn("Contact Phone", width="small"),
@@ -590,11 +964,9 @@ with col_main:
                 target_doc = None
                 if selected_doc_rows:
                     selected_license = display_df.iloc[selected_doc_rows[0]]["license_number"]
-                    target_doc = next((d for d in st.session_state.doctor_directory if d.get("license_number") == selected_license), None)
+                    target_doc = next((d for d in st.session_state.doctor_directory if d["license_number"] == selected_license), None)
 
                 render_clinician_governance_panel(target_doc, user_email)
-            else:
-                st.info("No clinician accounts registered.")
 
         st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
 
@@ -605,7 +977,7 @@ with col_main:
             audit_df = pd.DataFrame(st.session_state.doctor_audit_logs)
             if not audit_df.empty:
                 st.dataframe(
-                    audit_df, width="stretch", hide_index=True, key="doctor_audit_logs_table_df",
+                    audit_df, use_container_width=True, hide_index=True, key="doctor_audit_logs_table_df",
                     column_config={
                         "timestamp": st.column_config.TextColumn("Timestamp (UTC)", width="medium"), "target_doctor": st.column_config.TextColumn("Clinician", width="medium"),
                         "event_type": st.column_config.TextColumn("Security Event", width="medium"), "actor": st.column_config.TextColumn("Triggered By", width="medium"),
@@ -626,13 +998,13 @@ with col_main:
             st.markdown("### Pending Verification Queue")
             st.caption("Newly registered patients awaiting email confirmation or SMS OTP activation.")
 
-            if not raw_patients_df.empty and "is_verified" in raw_patients_df.columns:
+            if not raw_patients_df.empty:
                 pending_df = raw_patients_df[raw_patients_df["is_verified"] == False].reset_index(drop=True)
 
                 if not pending_df.empty:
                     selection_event = st.dataframe(
                         pending_df[["name", "email", "contact_number", "registered_at", "pending_method", "dispatch_count"]],
-                        width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row",
+                        use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row",
                         key="df_pending_verification_queue",
                         column_config={
                             "name": "Full Name", "email": "Gmail Address", "contact_number": "Contact Number",
@@ -652,32 +1024,30 @@ with col_main:
                     st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
                     col_p1, col_p2, col_p3 = st.columns(3)
                     with col_p1:
-                        if st.button("🔄 Resend Link / OTP", width="stretch", disabled=(target_pending is None), key="btn_pend_resend"):
+                        if st.button("🔄 Resend Link / OTP", use_container_width=True, disabled=(target_pending is None), key="btn_pend_resend"):
                             for p in st.session_state.patient_directory:
-                                if p.get("patient_id") == target_pending.get("patient_id"): p["dispatch_count"] = p.get("dispatch_count", 0) + 1
+                                if p["patient_id"] == target_pending["patient_id"]: p["dispatch_count"] += 1
                             st.session_state.patient_audit_logs.insert(0, {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "target_patient": target_pending["name"], "event_type": "OTP_REDISPATCHED", "actor": f"Admin ({user_email})", "ip_address": "127.0.0.1", "details": f"Verification token re-dispatched to {target_pending['email']}."})
                             st.success(f"Verification token re-sent to {target_pending['email']}.")
                             st.rerun()
 
                     with col_p2:
-                        if st.button("✅ Manual Authorization", width="stretch", disabled=(target_pending is None), key="btn_pend_auth"):
+                        if st.button("✅ Manual Authorization", use_container_width=True, disabled=(target_pending is None), key="btn_pend_auth"):
                             for p in st.session_state.patient_directory:
-                                if p.get("patient_id") == target_pending.get("patient_id"):
+                                if p["patient_id"] == target_pending["patient_id"]:
                                     p["is_verified"] = True; p["is_active"] = True; p["pending_method"] = "None"
                             st.session_state.patient_audit_logs.insert(0, {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "target_patient": target_pending["name"], "event_type": "MANUAL_VERIFICATION", "actor": f"Admin ({user_email})", "ip_address": "127.0.0.1", "details": "Identity authorized manually by administrative override."})
                             st.success(f"Account for {target_pending['name']} manually verified.")
                             st.rerun()
 
                     with col_p3:
-                        if st.button("🗑️ Purge Expired Requests", width="stretch", key="btn_pend_purge"):
+                        if st.button("🗑️ Purge Expired Requests", use_container_width=True, key="btn_pend_purge"):
                             purged_count = len([p for p in st.session_state.patient_directory if not p.get("is_verified", False)])
                             st.session_state.patient_directory = [p for p in st.session_state.patient_directory if p.get("is_verified", False)]
                             st.warning(f"Purged {purged_count} unverified registration attempt(s).")
                             st.rerun()
                 else:
                     st.info("Queue is clear. No pending verifications.")
-            else:
-                st.info("Queue is clear. No pending verifications.")
 
         with st.container(border=True):
             st.markdown("### Master Patient Directory")
@@ -692,51 +1062,46 @@ with col_main:
                 p_filtered_df = raw_patients_df.copy()
                 if p_search_query:
                     q = p_search_query.lower()
-                    p_filtered_df = p_filtered_df[p_filtered_df["name"].str.lower().str.contains(q) | p_filtered_df["email"].str.lower().str.contains(q) | p_filtered_df.get("contact_number", pd.Series(dtype=str)).str.contains(q)]
+                    p_filtered_df = p_filtered_df[p_filtered_df["name"].str.lower().str.contains(q) | p_filtered_df["email"].str.lower().str.contains(q) | p_filtered_df["contact_number"].str.contains(q)]
                 
-                if p_status_filter == "Active": p_filtered_df = p_filtered_df[(p_filtered_df.get("is_active", True) == True) & (p_filtered_df.get("is_locked", False) == False)]
-                elif p_status_filter == "Pending": p_filtered_df = p_filtered_df[p_filtered_df.get("is_verified", False) == False]
-                elif p_status_filter == "Suspended": p_filtered_df = p_filtered_df[(p_filtered_df.get("is_active", True) == False) | (p_filtered_df.get("is_locked", False) == True)]
+                if p_status_filter == "Active": p_filtered_df = p_filtered_df[(p_filtered_df["is_active"] == True) & (p_filtered_df["is_locked"] == False)]
+                elif p_status_filter == "Pending": p_filtered_df = p_filtered_df[p_filtered_df["is_verified"] == False]
+                elif p_status_filter == "Suspended": p_filtered_df = p_filtered_df[(p_filtered_df["is_active"] == False) | (p_filtered_df["is_locked"] == True)]
 
-                if p_hipaa_filter == "Consented": p_filtered_df = p_filtered_df[p_filtered_df.get("hipaa_consent", False) == True]
-                elif p_hipaa_filter == "Pending": p_filtered_df = p_filtered_df[p_filtered_df.get("hipaa_consent", False) == False]
+                if p_hipaa_filter == "Consented": p_filtered_df = p_filtered_df[p_filtered_df["hipaa_consent"] == True]
+                elif p_hipaa_filter == "Pending": p_filtered_df = p_filtered_df[p_filtered_df["hipaa_consent"] == False]
 
                 p_display_df = p_filtered_df.copy()
-                if not p_display_df.empty:
-                    p_display_df["hipaa_badge"] = p_display_df.get("hipaa_consent", pd.Series([False]*len(p_display_df))).apply(lambda v: "📝 Consented" if v else "⏳ Pending")
-                    
-                    def get_account_state(row):
-                        if not row.get("is_verified", False): return "🟡 Pending"
-                        if row.get("is_locked", False): return "🔒 Locked"
-                        if not row.get("is_active", True): return "🔴 Suspended"
-                        return "🟢 Active"
-                    
-                    p_display_df["account_state"] = p_display_df.apply(get_account_state, axis=1)
+                p_display_df["hipaa_badge"] = p_display_df["hipaa_consent"].apply(lambda v: "📝 Consented" if v else "⏳ Pending")
+                
+                def get_account_state(row):
+                    if not row["is_verified"]: return "🟡 Pending"
+                    if row["is_locked"]: return "🔒 Locked"
+                    if not row["is_active"]: return "🔴 Suspended"
+                    return "🟢 Active"
+                
+                p_display_df["account_state"] = p_display_df.apply(get_account_state, axis=1)
 
-                    disp_cols = [c for c in ["name", "email", "contact_number", "dob", "hipaa_badge", "account_state"] if c in p_display_df.columns]
+                patient_selection = st.dataframe(
+                    p_display_df[["name", "email", "contact_number", "dob", "hipaa_badge", "account_state"]],
+                    use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", key="df_master_patient_directory",
+                    column_config={
+                        "name": "Patient Name", "email": "Gmail Address", "contact_number": "Contact Phone",
+                        "dob": "Date of Birth", "hipaa_badge": "HIPAA Status", "account_state": "Account State"
+                    },
+                    height=240
+                )
 
-                    patient_selection = st.dataframe(
-                        p_display_df[disp_cols],
-                        width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row", key="df_master_patient_directory",
-                        column_config={
-                            "name": "Patient Name", "email": "Gmail Address", "contact_number": "Contact Phone",
-                            "dob": "Date of Birth", "hipaa_badge": "HIPAA Status", "account_state": "Account State"
-                        },
-                        height=240
-                    )
-
-                    st.divider()
-                    st.markdown("##### **Account Governance Panel**")
-                    
-                    selected_pat_rows = patient_selection.selection.rows
-                    target_patient = None
-                    if selected_pat_rows and "email" in p_display_df.columns:
-                        selected_email = p_display_df.iloc[selected_pat_rows[0]]["email"]
-                        target_patient = next((p for p in st.session_state.patient_directory if p.get("email") == selected_email), None)
-                    
-                    render_patient_governance_panel(target_patient, user_email)
-            else:
-                st.info("No patient accounts registered.")
+                st.divider()
+                st.markdown("##### **Account Governance Panel**")
+                
+                selected_pat_rows = patient_selection.selection.rows
+                target_patient = None
+                if selected_pat_rows:
+                    selected_email = p_display_df.iloc[selected_pat_rows[0]]["email"]
+                    target_patient = next((p for p in st.session_state.patient_directory if p["email"] == selected_email), None)
+                
+                render_patient_governance_panel(target_patient, user_email)
 
         st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
 
@@ -746,7 +1111,7 @@ with col_main:
             p_audit_df = pd.DataFrame(st.session_state.patient_audit_logs)
             if not p_audit_df.empty:
                 st.dataframe(
-                    p_audit_df, width="stretch", hide_index=True, key="df_patient_audit_logs",
+                    p_audit_df, use_container_width=True, hide_index=True, key="df_patient_audit_logs",
                     column_config={
                         "timestamp": "Timestamp (UTC)", "target_patient": "Target Patient", 
                         "event_type": "Security Event", "actor": "Triggered By", 
@@ -756,7 +1121,6 @@ with col_main:
                 )
             else:
                 st.info("No audit events recorded.")
-
     # --------------------------------------------------------------------------
     # TAB 4: EMPLOYEE / ADMIN ACCOUNTS & SETTINGS
     # --------------------------------------------------------------------------
@@ -870,7 +1234,7 @@ with col_main:
                 emp_cred_ttl = st.selectbox("Credential TTL", ["24 Hours", "48 Hours", "7 Days"], key="adm_cred_ttl")
 
             st.divider()
-            submit_emp = st.button("Create Admin Account", type="primary", width="stretch")
+            submit_emp = st.button("Create Admin Account", type="primary", use_container_width=True)
 
             if submit_emp:
                 errors = []
@@ -883,7 +1247,7 @@ with col_main:
                 if not emp_em_name.strip(): errors.append("Emergency Contact Name is required.")
                 if not is_valid_phone_format(emp_em_contact): errors.append("Emergency Contact Number must follow 09XX-XXX-XXXX.")
 
-                if any(e.get("emp_id") == emp_code.strip() for e in st.session_state.employee_directory):
+                if any(e["emp_id"] == emp_code.strip() for e in st.session_state.employee_directory):
                     errors.append(f"Admin Code Conflict: `{emp_code.strip()}` is already assigned.")
 
                 if errors:
@@ -908,30 +1272,25 @@ with col_main:
             st.markdown("##### Staff & Admin Directory")
             
             emp_df = pd.DataFrame(st.session_state.employee_directory)
-            if not emp_df.empty:
-                emp_display = emp_df.copy()
-                emp_display["status_badge"] = emp_display.get("status", pd.Series(["Active"]*len(emp_display))).apply(lambda s: "🟢 Active" if s == "Active" else "🔴 Suspended")
-                
-                disp_cols = [c for c in ["emp_id", "name", "role", "email", "status_badge"] if c in emp_display.columns]
+            emp_display = emp_df.copy()
+            emp_display["status_badge"] = emp_display["status"].apply(lambda s: "🟢 Active" if s == "Active" else "🔴 Suspended")
+            
+            emp_selection = st.dataframe(
+                emp_display[["emp_id", "name", "role", "email", "status_badge"]], 
+                use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", key="admin_tab_employee_df",
+                column_config={
+                    "emp_id": "Emp ID", "name": "Name", "role": "Role", "email": "Email", "status_badge": "Status"
+                },
+                height=220
+            )
 
-                emp_selection = st.dataframe(
-                    emp_display[disp_cols], 
-                    width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row", key="admin_tab_employee_df",
-                    column_config={
-                        "emp_id": "Emp ID", "name": "Name", "role": "Role", "email": "Email", "status_badge": "Status"
-                    },
-                    height=220
-                )
+            st.divider()
+            st.markdown("##### 🔑 Credential Management")
 
-                st.divider()
-                st.markdown("##### 🔑 Credential Management")
+            selected_emp_rows = emp_selection.selection.rows
+            target_e = None
+            if selected_emp_rows:
+                selected_emp_id = emp_display.iloc[selected_emp_rows[0]]["emp_id"]
+                target_e = next((e for e in st.session_state.employee_directory if e["emp_id"] == selected_emp_id), None)
 
-                selected_emp_rows = emp_selection.selection.rows
-                target_e = None
-                if selected_emp_rows and "emp_id" in emp_display.columns:
-                    selected_emp_id = emp_display.iloc[selected_emp_rows[0]]["emp_id"]
-                    target_e = next((e for e in st.session_state.employee_directory if e.get("emp_id") == selected_emp_id), None)
-
-                render_admin_governance_panel(target_e)
-            else:
-                st.info("No employee accounts registered.")
+            render_admin_governance_panel(target_e)

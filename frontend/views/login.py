@@ -179,8 +179,23 @@ with col_main:
                                     st.session_state["authenticated"] = True
                                     st.session_state["jwt_token"] = data.get("access_token")
                                     st.session_state["user_role"] = backend_role
+                                    
+                                    # Ensure the username used to login is always preserved
+                                    st.session_state["username"] = user
                                     st.session_state["user_id"] = data.get("user", {}).get("user_id")
-                                    st.session_state["user_profile"] = data.get("profile", {})
+                                    
+                                    # Securely handle missing profile objects
+                                    raw_profile = data.get("profile")
+                                    if not raw_profile and backend_role == "PATIENT":
+                                        st.session_state["user_profile"] = {
+                                            "first_name": user.split("@")[0].title(),
+                                            "last_name": "",
+                                            "gender": "Not Specified",
+                                            "date_of_birth": "1990-01-01"
+                                        }
+                                    else:
+                                        st.session_state["user_profile"] = raw_profile if raw_profile else {}
+                                        
                                     st.rerun()
                                     
                             elif resp.status_code == 401:
