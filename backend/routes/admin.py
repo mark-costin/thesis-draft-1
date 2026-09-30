@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from dbconnect import db
+from backend.dbconnect import db
 from backend.model_orm.usr_orm import User
 from backend.model_orm.doc_orm import Doctor
 

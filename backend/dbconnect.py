@@ -24,3 +24,7 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 
 # Initialize SQLAlchemy instance
 db = SQLAlchemy(app)
+
+def get_db_connection():
+    """Returns a raw DBAPI connection from the SQLAlchemy connection pool."""
+    return db.engine.raw_connection()

@@ -2,7 +2,7 @@ import json
 import time
 from functools import wraps
 from flask import request, jsonify, make_response
-from backend.utils.dbconnect import get_db_connection
+from backend.dbconnect import get_db_connection
 
 CACHE_TTL_SECONDS = 86400  # 24-hour expiration window
 

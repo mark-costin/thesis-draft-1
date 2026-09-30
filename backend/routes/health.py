@@ -1,9 +1,9 @@
 import uuid
 from flask import Blueprint, jsonify
 from sqlalchemy import text
-from dbconnect import db
-from middleware.idempotency import enforce_idempotency
-from middleware.sanitizer import sanitize_response
+from backend.dbconnect import db
+from backend.middleware.idempotency import enforce_idempotency
+from backend.middleware.sanitizer import sanitize_response
 
 health_bp = Blueprint("health", __name__, url_prefix="/api/health")
 

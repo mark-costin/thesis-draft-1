@@ -2,7 +2,7 @@ import os
 import datetime
 import jwt
 from flask import Blueprint, request, jsonify
-from dbconnect import db
+from backend.dbconnect import db
 from sqlalchemy.exc import IntegrityError
 
 # Import Models

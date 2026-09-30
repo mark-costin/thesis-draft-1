@@ -1,0 +1,75 @@
+flowchart TD
+    Start([Patient Arrives]) --> CheckStatus{Is this the first time?}
+
+    %% ONBOARDING VS RETURNING & FHRS UPDATE LOOP
+    CheckStatus -- Yes --> FH_Intake[Family History Intake]
+    CheckStatus -- No --> UpdateFHRS{Family History Changed?}
+    
+    UpdateFHRS -- Yes --> FH_Intake
+    UpdateFHRS -- No --> LoadProfile[Load Existing Profile & FHRS_d]
+
+    %% 1. FHRS ENGINE (DISEASE-SPECIFIC)
+    subgraph FHRS_Engine [Family History Metric Engine]
+        FH_Intake --> CollectData[Collect: Relatives Tiers 1-3, Age of Onset, Disease Type]
+        CollectData --> CalcFHRS["Compute FHRS_d = ∑ (R_i × O_i × S_i) + C_d"]
+        
+        Env_Intake[Environmental Data Intake: Diet, Smoking, Stress, etc.] --> CalcEnv
+        CalcFHRS --> CalcEnv["Compute Adjusted FHRS_d = FHRS_d × E_d"]
+        CalcEnv --> FHRS_Output[Output: FHRS_CVD, FHRS_T2D, FHRS_RESP, FHRS_NEURO]
+    end
+
+    %% 2. DATA VALIDATION & STRICT FEATURE ROUTING
+    FHRS_Output --> DataVal["Data Validation: Unit Conversion, Range Checks, Binning & Missingness Indicators"]
+    LoadProfile --> DataVal
+    Vitals_Labs[Input Current Vitals, Labs, Symptoms] --> DataVal
+
+    DataVal --> FeatureRouter[Feature Routing Layer: Disease-Specific Masks]
+
+    %% 3. HYBRID AI/CDSS ENGINE (JUSTIFIED CHAIN + PARALLEL HEADS)
+    subgraph AI_CDSS [AI / CDSS Engine: Hybrid Multi-Task Architecture]
+        FeatureRouter -- T2D Features + FHRS_T2D --> T2D_Head[1. T2D Head]
+        
+        T2D_Head -- "Chained Risk Feature\n(Out-of-Fold during Training)" --> CVD_Head[2. CVD Head]
+        FeatureRouter -- CVD Features + FHRS_CVD --> CVD_Head
+        
+        FeatureRouter -- RESP Features + FHRS_RESP --> RESP_Head[3. RESP Head]
+        FeatureRouter -- NEURO Features + FHRS_NEURO --> NEURO_Head[4. NEURO Head]
+    end
+
+    %% 4. PER-DISEASE STRATIFICATION & EXPLAINABILITY
+    T2D_Head --> RiskStrat[Per-Disease Risk Stratification: Low / Medium / High]
+    CVD_Head --> RiskStrat
+    RESP_Head --> RiskStrat
+    NEURO_Head --> RiskStrat
+
+    T2D_Head --> Explainability[Per-Head Explainability: TreeSHAP + FHRS Decomp + Threshold Alignment]
+    CVD_Head --> Explainability
+    RESP_Head --> Explainability
+    NEURO_Head --> Explainability
+
+    RiskStrat --> Calibration[Per-Disease Calibration & Uncertainty Quantification]
+    Explainability --> Calibration
+    
+    %% 5. FAIRNESS AUDIT & INSIGHT GENERATION
+    Calibration --> FairnessAudit[Fairness Audit: Subgroup SHAP & Calibration Checks]
+    Explainability --> FairnessAudit
+
+    FairnessAudit --> InsightGen[Generate Non-Prescriptive Disease Insights]
+    
+    %% 6. STRICT CLINICAL DECISION BOUNDARY (HUMAN ONLY)
+    subgraph Clinical_Boundary [Licensed Physician Boundary: Sole Clinical Authority]
+        InsightGen --> DoctorReview[Doctor Dashboard: Review & Validate Risk / SHAP]
+        Explainability --> DoctorReview
+        DoctorReview --> CarePlan[Physician Develops Care Plan]
+        CarePlan --> Meds[Physician Prescribes Structured Medications]
+        CarePlan --> Lifestyle[Physician Orders Lifestyle & Monitoring]
+    end
+
+    %% 7. AUDIT TRAIL & EHR INTEGRATION
+    DoctorReview -. "Finalized Clinical Decisions" .-> AuditTrail["Audit Trail: Model Version, Overrides, SHAP, FHRS Decomp, Calibration Metrics, Insight Template"]
+    Meds --> AuditTrail
+    Lifestyle --> AuditTrail
+    AuditTrail --> Finalize[Commit to Patient Portal & EHR]
+
+
+    

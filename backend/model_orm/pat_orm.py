@@ -23,8 +23,13 @@ class Patient(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     updated_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now(), onupdate=db.func.now())
 
-    # --- Restored Cascade Relationships ---
+    # --- Hereditary & Vector AI Layer (clinic_orm.py & clinical_vector.py) ---
     family_history = db.relationship('FamilyHistory', backref='patient', cascade='all, delete-orphan', lazy=True)
     fhrs_records = db.relationship('FHRSStratification', backref='patient', cascade='all, delete-orphan', lazy=True)
-    cvd_metrics = db.relationship('CVDMetrics', backref='patient', uselist=False, cascade='all, delete-orphan')
     clinical_vector = db.relationship('ClinicalVector', backref='patient', uselist=False, cascade='all, delete-orphan')
+
+    # --- 4 Chronic Disease Modality Relationships (clinic_orm.py) ---
+    cvd_metrics = db.relationship('CVDMetrics', backref='patient', cascade='all, delete-orphan', lazy=True)
+    t2d_metrics = db.relationship('T2DMetrics', backref='patient', cascade='all, delete-orphan', lazy=True)
+    respiratory_metrics = db.relationship('RespiratoryMetrics', backref='patient', cascade='all, delete-orphan', lazy=True)
+    neuro_mental_metrics = db.relationship('NeuroMentalMetrics', backref='patient', cascade='all, delete-orphan', lazy=True)

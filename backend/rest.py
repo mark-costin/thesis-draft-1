@@ -1,7 +1,7 @@
 import os
 from flask import jsonify
 from flask_cors import CORS
-from dbconnect import app, db
+from backend.dbconnect import app, db
 
 # Import Security Middleware
 from backend.middleware.security import init_security_headers
@@ -30,7 +30,7 @@ CORS(app, resources={
 init_security_headers(app)
 
 # Bind the Database to the App
-db.init_app(app)
+#db.init_app(app)
 
 # 3. Register API Blueprints
 app.register_blueprint(auth_bp)
