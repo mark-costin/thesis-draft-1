@@ -15,7 +15,7 @@ from backend.model_orm.adm_orm import Admin
 from backend.middleware.sanitizer import sanitize_response
 from backend.middleware.rbac import role_required
 
-auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "clinical-platform-default-jwt-secret-key")
 JWT_ALGORITHM = "HS256"

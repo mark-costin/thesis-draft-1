@@ -1,3 +1,6 @@
+import sys, os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import docpage_api
 import datetime
 import re
 import base64
@@ -163,7 +166,7 @@ with col_main:
                         
                         try:
                             resp = requests.post(
-                                "http://localhost:5000/api/auth/login",
+                                f"{docpage_api.BASE_URL}/auth/login",
                                 json={"username": user, "password": pwd},
                                 timeout=5
                             )
@@ -338,7 +341,7 @@ with col_main:
                         
                         with st.spinner("Processing account details..."):
                             try:
-                                resp = requests.post("http://localhost:5000/api/auth/register", json=payload, timeout=5)
+                                resp = requests.post(f"{docpage_api.BASE_URL}/auth/register", json=payload, timeout=5)
                                 
                                 if resp.status_code == 201:
                                     st.success("✅ Account registered successfully! Please proceed to the Log In tab.")

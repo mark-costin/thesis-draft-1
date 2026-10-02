@@ -174,3 +174,43 @@ class NeuroMentalMetrics(db.Model):
     family_history_neuro_psych = db.Column(db.Integer)
     age = db.Column(db.Numeric(4, 1))
     recorded_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
+
+
+# ==============================================================================
+# 7. CORE ENCOUNTER & LONGITUDINAL LEDGER (D3)
+# ==============================================================================
+class Encounter(db.Model):
+    __tablename__ = 'encounters'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    encounter_uid = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), nullable=False, index=True)
+    doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.doctor_id'), nullable=False)
+    
+    # Discriminator: 'BASELINE', 'FOLLOWUP', 'REANCHOR_BASELINE'
+    record_type = db.Column(db.String(32), nullable=False, default='BASELINE')
+    
+    # Cryptographic Chain & Provenance
+    parent_baseline_hash = db.Column(db.String(64), nullable=True)
+    cryptographic_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    
+    # Snapshots & Directives
+    cdss_payload = db.Column(db.JSON, nullable=False)
+    care_plan = db.Column(db.JSON, nullable=False)
+    reanchor_decision = db.Column(db.String(16), nullable=True)
+    
+    created_at_utc = db.Column(db.DateTime(timezone=True), server_default=db.func.now(), nullable=False)
+
+    # Relationships
+    patient = db.relationship('Patient', backref=db.backref('encounters', lazy=True, cascade='all, delete-orphan'))
+    doctor = db.relationship('Doctor', backref=db.backref('authored_encounters', lazy=True))
+
+    # Contract Compatibility Alias
+    @property
+    def cdss_payload_snapshot(self):
+        """Attribute alias for API contract compatibility."""
+        return self.cdss_payload
+
+    @cdss_payload_snapshot.setter
+    def cdss_payload_snapshot(self, value):
+        self.cdss_payload = value
