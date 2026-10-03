@@ -4,7 +4,7 @@
 
 ## Project Configuration & Environment
 
-* **`pyproject.toml`** — Project metadata, python version specifications, and package dependency declarations managed via `uv`.
+* **`pyproject.toml`** — Project metadata, Python version specifications, and package dependency declarations managed via `uv`.
 * **`uv.lock`** — Lockfile capturing exact sub-dependency versions to ensure deterministic, reproducible environments.
 * **`.env`** *(Git-ignored)* — Secure local storage for sensitive database credentials (`DATABASE_URL`), Flask environment flags, and secret keys.
 * **`.gitignore`** — Rules preventing secret files (`.env`), virtual environments (`.venv/`), and byte-code caches (`__pycache__/`) from committing to Git.
@@ -12,59 +12,63 @@
 
 ---
 
-## `database/`
+## database/
 
-* **`schema.sql`** — Base DDL script establishing PostgreSQL tables (`Users`, `PatientsProfile`, `DoctorsProfile`, `AdminsProfile`, `HealthAssessments`).
-* **`seed.sql`** — Initial test dataset containing seeded credentials, patient records, and doctor profiles.
-
----
-
-## `backend/`
-
-### Gateway Core & Scripts
-
-* **`rest.py`** — Primary entry point for the Flask REST API Gateway. Applies global CORS policies, attaches security headers, and mounts API blueprints.
-* **`dbconnect.py`** — Centralized infrastructure file loading `.env` variables and configuring SQLAlchemy connection pooling (`pool_size`, `max_overflow`, `pool_recycle`).
-* **`test_orm.py`** — Automated validation script verifying bidirectional ORM navigation and `ON DELETE CASCADE` relationships.
-
-### `backend/middleware/`
-
-* **`idempotency.py`** — Intercepts state-changing HTTP operations (`POST`, `PUT`, `PATCH`, `DELETE`) with an `Idempotency-Key` cache to prevent replay attacks and duplicate submissions.
-* **`rbac.py`** — Role-Based Access Control middleware enforcing cryptographic token/session checks prior to route execution.
-* **`sanitizer.py`** — Recursively strips sensitive fields (`password_hash`, `secret_key`) from JSON payloads prior to returning responses to the frontend.
-* **`security.py`** — Injects defense headers (`X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`) into outgoing responses to prevent XSS and Clickjacking.
-
-### `backend/model_orm/`
-
-* **`usr_orm.py`** — Declarative SQLAlchemy model mapping for base `Users` (authentication credentials, roles).
-* **`pat_orm.py`** — Declarative ORM model mapping for `PatientsProfile` (demographics, foreign key to `Users`).
-* **`doc_orm.py`** — Declarative ORM model mapping for `DoctorsProfile` (medical licenses, specializations).
-* **`adm_orm.py`** — Declarative ORM model mapping for `AdminsProfile` (system management metadata).
-
-### `backend/routes/`
-
-* **`health.py`** — Diagnostic endpoints (`GET /api/health`, `GET /api/health/db`, `POST /api/health/test-idempotency`) to monitor API gateway readiness and database connectivity.
-* **`auth0.py`** — Authentication blueprints handling user logins, password hashing verification, and token generation.
-* **`predictions.py`** — Inference endpoints serving ML predictive risk assessments to authorized callers.
-* **`admin.py`** — Administrative endpoints for system user metrics, doctor account provisioning, and audit logs.
+* **`database/schema.sql`** — Base DDL script establishing PostgreSQL tables (`Users`, `PatientsProfile`, `DoctorsProfile`, `AdminsProfile`, `HealthAssessments`).
+* **`database/seed.sql`** — Initial test dataset containing seeded credentials, patient records, and doctor profiles.
 
 ---
 
-## `frontend/`
+## backend/
 
-* **`main.py`** — Entry point for the Streamlit web application managing global session state, top-level navigation, and RBAC workspace routing.
-* **`assets/`** — Static visual assets including custom CSS styling stylesheets, icons, and medical branding images.
+### Core Application
+* **`backend/dbconnect.py`** — Core SQLAlchemy configuration and database connection pooling.
+* **`backend/rest.py`** — Application entry point instance, blueprint registration, and CORS middleware configuration.
+* **`backend/cdss_engine.py`** — CDSS logic managing XGBoost inference, TreeSHAP explainability, and algorithmic fairness auditing.
 
-### `frontend/views/`
+### Validation & Testing
+* **`backend/test_clinical_pipeline.py`** — End-to-end verification pipeline for 4 disease domains, cascades, and FHRS.
+* **`backend/test_orm.py`** — Integration and data-cascading tests for all relational database entities.
+* **`backend/test_vector_search.py`** — Tests for `pgvector` cosine similarity (`<=>`) and semantic embedding lookups.
 
-* **`login_view.py`** — Unauthenticated landing view hosting login forms and patient self-registration forms.
-* **`patientpage.py`** — Patient Portal containing intake surveys (symptoms, BMI, family health history) and interactive ML predictive risk evaluation charts.
-* **`doctorpage.py`** — Clinician Workspace featuring patient search lookups, downloadable CDSS diagnostic reports, and verified clinical diagnosis forms.
-* **`adminpage.py`** — System Admin Portal displaying real-time user KPI metrics and doctor provisioning tools.
+### backend/middleware/
+* **`backend/middleware/idempotency.py`** — Replay-attack prevention and distributed request caching.
+* **`backend/middleware/rbac.py`** — Role-Based Access Control and JWT claim authorization checks.
+* **`backend/middleware/sanitizer.py`** — Role-aware payload field stripping and request validation.
+* **`backend/middleware/security.py`** — Baseline browser security headers and defense-in-depth configurations.
+
+### backend/model_orm/
+* **`backend/model_orm/__init__.py`** — Unified package exports for database models.
+* **`backend/model_orm/usr_orm.py`** — Master user identity schemas, token verification, and secure password hashing.
+* **`backend/model_orm/pat_orm.py`** — Patient clinical profiles, 4-modality cascading relationships, and HIPAA-compliant audit records.
+* **`backend/model_orm/doc_orm.py`** — Attending clinician profiles and credentials validation.
+* **`backend/model_orm/adm_orm.py`** — Administrative staff identity models.
+* **`backend/model_orm/clinic_orm.py`** — Clinical telemetry data, 4 chronic disease domains, FHRS, and cache tables.
+* **`backend/model_orm/clinical_vector.py`** — `pgvector` embeddings for semantic clinical history retrieval.
+
+### backend/routes/
+* **`backend/routes/auth0.py`** — JWT issuance, self-registration endpoints, and account lockout controls.
+* **`backend/routes/doctor.py`** — Triage queue queries, patient record retrieval, and clinical directives.
+* **`backend/routes/admin.py`** — Clinician provisioning endpoints and identity directory inspection.
+* **`backend/routes/predictions.py`** — CDSS diagnostic inference and model prediction endpoints.
+* **`backend/routes/health.py`** — Database connection ping and API gateway readiness probes.
 
 ---
 
-## `tensorflow notebook/` (ML Pipeline)
+## frontend/
 
-* **`notebook.ipynb`** — Machine learning prototyping notebook for model training, feature engineering, hyperparameter tuning, and model export.
-* **`about`** — Documentation covering dataset sources, feature descriptions, and model evaluation metrics.
+* **`frontend/main.py`** — Entry point for the Streamlit web application managing global session state, top-level navigation, and RBAC workspace routing.
+* **`frontend/assets/`** — Static visual assets including custom CSS stylesheets, UI icons, and medical branding images.
+
+### frontend/views/
+* **`frontend/views/login_view.py`** — Unauthenticated landing view hosting login forms and patient self-registration workflows.
+* **`frontend/views/patientpage.py`** — Patient Portal containing intake surveys (symptoms, BMI, family health history) and interactive ML risk charts.
+* **`frontend/views/doctorpage.py`** — Clinician Workspace featuring patient search lookups, downloadable CDSS diagnostic reports, and clinical diagnosis forms.
+* **`frontend/views/adminpage.py`** — System Admin Portal displaying real-time user KPI metrics and doctor provisioning tools.
+
+---
+
+## tensorflow notebook/
+
+* **`tensorflow notebook/notebook.ipynb`** — Machine learning prototyping notebook for model training, feature engineering, hyperparameter tuning, and model serialization/export.
+* **`tensorflow notebook/about`** — Documentation covering dataset sources, target feature descriptions, and model evaluation metrics.
