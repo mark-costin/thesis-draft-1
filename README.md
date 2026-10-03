@@ -18,35 +18,33 @@
 * **`seed.sql`** — Initial test dataset containing seeded credentials, patient records, and doctor profiles.
 
 ---
+backend/
+├── dbconnect.py                 # Core SQLAlchemy configuration and database pooling
+├── rest.py                      # Application instance, blueprint registration & CORS
+├── cdss_engine.py               # XGBoost inference, TreeSHAP explainability & fairness auditing
+├── test_clinical_pipeline.py    # Verification pipeline for 4 disease domains, cascades & FHRS
+├── test_orm.py                  # Integration and cascading tests for relational entities
+├── test_vector_search.py        # pgvector cosine similarity (<=>) and embedding search tests
+├── middleware/
+│   ├── idempotency.py          # Replay-attack prevention & distributed request caching
+│   ├── rbac.py                  # Role-Based Access Control and claim authorization
+│   ├── sanitizer.py             # Role-aware payload field stripping
+│   └── security.py              # Baseline browser security headers & defense-in-depth
+├── model_orm/
+│   ├── __init__.py              # Unified package exports for database models
+│   ├── usr_orm.py               # Master user identity, tokens, and password hashing
+│   ├── pat_orm.py               # Patient clinical profiles, 4-modality cascading relationships & HIPAA records
+│   ├── doc_orm.py               # Attending clinician profiles and credentials
+│   ├── adm_orm.py               # Administrative staff identity models
+│   ├── clinic_orm.py            # Clinical telemetry, 4 chronic disease domains, FHRS & cache tables
+│   └── clinical_vector.py       # pgvector embeddings for semantic clinical history retrieval
+└── routes/
+    ├── auth0.py                 # JWT issuance, self-registration, and lockout controls
+    ├── doctor.py                # Triage queue queries, patient records, and directives
+    ├── admin.py                 # Clinician provisioning and identity directory inspection
+    ├── predictions.py           # CDSS diagnostic inference endpoints
+    └── health.py                # Database ping and gateway readiness probes
 
-## `backend/`
-
-### Gateway Core & Scripts
-
-* **`rest.py`** — Primary entry point for the Flask REST API Gateway. Applies global CORS policies, attaches security headers, and mounts API blueprints.
-* **`dbconnect.py`** — Centralized infrastructure file loading `.env` variables and configuring SQLAlchemy connection pooling (`pool_size`, `max_overflow`, `pool_recycle`).
-* **`test_orm.py`** — Automated validation script verifying bidirectional ORM navigation and `ON DELETE CASCADE` relationships.
-
-### `backend/middleware/`
-
-* **`idempotency.py`** — Intercepts state-changing HTTP operations (`POST`, `PUT`, `PATCH`, `DELETE`) with an `Idempotency-Key` cache to prevent replay attacks and duplicate submissions.
-* **`rbac.py`** — Role-Based Access Control middleware enforcing cryptographic token/session checks prior to route execution.
-* **`sanitizer.py`** — Recursively strips sensitive fields (`password_hash`, `secret_key`) from JSON payloads prior to returning responses to the frontend.
-* **`security.py`** — Injects defense headers (`X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`) into outgoing responses to prevent XSS and Clickjacking.
-
-### `backend/model_orm/`
-
-* **`usr_orm.py`** — Declarative SQLAlchemy model mapping for base `Users` (authentication credentials, roles).
-* **`pat_orm.py`** — Declarative ORM model mapping for `PatientsProfile` (demographics, foreign key to `Users`).
-* **`doc_orm.py`** — Declarative ORM model mapping for `DoctorsProfile` (medical licenses, specializations).
-* **`adm_orm.py`** — Declarative ORM model mapping for `AdminsProfile` (system management metadata).
-
-### `backend/routes/`
-
-* **`health.py`** — Diagnostic endpoints (`GET /api/health`, `GET /api/health/db`, `POST /api/health/test-idempotency`) to monitor API gateway readiness and database connectivity.
-* **`auth0.py`** — Authentication blueprints handling user logins, password hashing verification, and token generation.
-* **`predictions.py`** — Inference endpoints serving ML predictive risk assessments to authorized callers.
-* **`admin.py`** — Administrative endpoints for system user metrics, doctor account provisioning, and audit logs.
 
 ---
 
