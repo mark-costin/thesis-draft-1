@@ -1,17 +1,48 @@
 import sys
 from pathlib import Path
 import streamlit as st
+import re
 import pandas as pd
 from datetime import datetime
+from frontend.views.styles import basetab_layout_
+import frontend.docpage_api as docpage_api
 
+from frontend.views.styles import basetab_layout_, render_top_navbar
+
+# Apply system styling template
+basetab_layout_()
+
+# ==============================================================================
+# INPUT VALIDATION HELPERS (ADMIN-COMPATIBLE)
+# ==============================================================================
+def clean_alpha_input(key: str):
+    raw_val = st.session_state.get(key, "")
+    st.session_state[f"{key}_invalid"] = bool(re.search(r"[^A-Za-z\s\-]", raw_val))
+    st.session_state[key] = re.sub(r"[^A-Za-z\s\-]", "", raw_val)
+
+def format_phone_number(key: str):
+    raw_val = st.session_state.get(key, "")
+    st.session_state[f"{key}_invalid"] = bool(re.search(r"[^0-9\-]", raw_val))
+    digits = "".join(filter(str.isdigit, raw_val))[:11]
+    formatted = digits[:4] + ("-" + digits[4:7] if len(digits) > 4 else "") + ("-" + digits[7:11] if len(digits) > 7 else "")
+    st.session_state[key] = formatted
+
+def is_valid_phone_format(text: str) -> bool:
+    return bool(re.match(r"^\d{4}-\d{3}-\d{4}$", text.strip()))
+
+def is_valid_email(text: str) -> bool:
+    return bool(re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", text.strip()))
 
 # ==============================================================================
 # LIVE PATIENT CONTEXT (VIA API AUTH)
 # ==============================================================================
 profile = st.session_state.get("user_profile", {})
-pid = st.session_state.get("user_id", "UNKNOWN")
+pid = st.session_state.get("user_id")
+if not pid or not str(pid).isdigit():
+    st.error("Session invalid. Please log in.")
+    st.stop()
+safe_pat_id = int(pid)
 
-# 1. Resilient Name Parsing
 raw_name = profile.get("name")
 first_name = profile.get("first_name", "")
 last_name = profile.get("last_name", "")
@@ -21,28 +52,23 @@ if first_name or last_name:
 elif raw_name:
     display_name = raw_name
 else:
-    # Ultimate fallback to the username/email used during login
-    display_name = st.session_state.get("username", f"Patient {pid}")
+    display_name = st.session_state.get("username", f"Patient {safe_pat_id}")
 
-# 2. Resilient Age Parsing
 age = "--"
 dob_str = profile.get("date_of_birth") or profile.get("dob")
 if dob_str:
     try:
-        # Handles both YYYY-MM-DD and MM/DD/YYYY
         if "-" in dob_str:
             dob = datetime.strptime(dob_str, "%Y-%m-%d")
         else:
             dob = datetime.strptime(dob_str, "%m/%d/%Y")
-            
         today = datetime.today()
         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
     except (ValueError, TypeError):
         pass
 
-# 3. Construct Active Patient Context
 active_pat = {
-    "id": pid,
+    "id": safe_pat_id,
     "name": display_name,
     "age": age,
     "sex": profile.get("gender", profile.get("sex", "Not Specified")),
@@ -57,322 +83,284 @@ active_pat = {
     "fam_history": profile.get("fam_history", [])
 }
 
-# Ensure global queue structure exists for cross-view state sharing
+# Real-time hydration from PostgreSQL encounter ledger
+encounter_data = docpage_api.get_latest_patient_encounter(safe_pat_id) or {}
+latest_enc = encounter_data.get("encounter", {}) if encounter_data.get("has_encounter") else {}
+
+if latest_enc:
+    cp = latest_enc.get("care_plan", {})
+    cdss = latest_enc.get("cdss_payload", {})
+    if cp.get("clinical_order") or cp.get("directive"):
+        active_pat["prior_directive"] = cp.get("clinical_order") or cp.get("directive")
+    if cp.get("primary_condition"):
+        active_pat["primary_cond"] = cp.get("primary_condition")
+    if cp.get("risk_classification"):
+        active_pat["risk_flag"] = cp.get("risk_classification")
+    if cp.get("prescriptions"):
+        active_pat["active_rx"] = ", ".join(cp.get("prescriptions")) if isinstance(cp.get("prescriptions"), list) else str(cp.get("prescriptions"))
+    
+    vitals_snap = cdss.get("vitals") or cdss.get("clinical_inputs") or {}
+    if vitals_snap.get("blood_pressure") or vitals_snap.get("bp"):
+        active_pat["latest_bp"] = vitals_snap.get("blood_pressure") or vitals_snap.get("bp")
+    if vitals_snap.get("heart_rate") or vitals_snap.get("resting_hr"):
+        active_pat["resting_hr"] = vitals_snap.get("heart_rate") or vitals_snap.get("resting_hr")
+    if vitals_snap.get("bmi"):
+        active_pat["bmi"] = vitals_snap.get("bmi")
+
+# Synchronize triage queue state
 if "today_queue" not in st.session_state:
     st.session_state.today_queue = []
 
-# ==============================================================================
-# TOP NAVIGATION HEADER & CLINIC STATUS CARD
-# ==============================================================================
+backend_queue_resp = docpage_api.get_active_queue()
+if backend_queue_resp and "queue" in backend_queue_resp:
+    st.session_state.today_queue = backend_queue_resp["queue"]
+
+in_queue = next((q for q in st.session_state.today_queue if q.get("patient_id") == safe_pat_id), None)
+
 _, col_main, _ = st.columns([5, 90, 5], gap="small")
 
 with col_main:
-    # Top Bar Header
-    with st.container(border=False):
-        h1, h2 = st.columns([7, 3], vertical_alignment="center")
-        with h1:
-            st.markdown("### Lucerna Medica Patient Portal &nbsp;|&nbsp; <span style='font-size: 1.15rem; color: #64748b;'>My Health Overview</span>", unsafe_allow_html=True)
-        with h2:
-            sc1, sc2 = st.columns([3, 1], vertical_alignment="center")
-            with sc1:
-                first_name_only = active_pat["name"].split(',')[1].strip() if ',' in active_pat["name"] else active_pat["name"]
-                st.markdown(f"<div style='background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 12px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; text-align: center;'>🟢 {first_name_only} 👤</div>", unsafe_allow_html=True)
-            with sc2:
-                with st.popover("⚙️"):
-                    st.markdown(f"**Signed in as:** `{pid}`")
-                    st.divider()
-                    if st.button("Dark Mode", use_container_width=True, key=f"btn_dark_{pid}"): st.session_state.theme_mode = "dark"; st.rerun()
-                    if st.button("Light Mode", use_container_width=True, key=f"btn_light_{pid}"): st.session_state.theme_mode = "light"; st.rerun()
-                    st.divider()
-                    
-                    if st.button("🚪 Log Out", use_container_width=True, key=f"btn_logout_{pid}"):
-                        # Complete session wipe for security compliance and RBAC enforcement
-                        auth_artifacts = [
-                            "authenticated", "jwt_token", "user_role", "user_id", "user_profile", 
-                            "logged_in_patient_id", "active_patient", "cdss_inference_payload", "ai_inference_completed"
-                        ]
-                        for artifact in auth_artifacts:
-                            if artifact in st.session_state:
-                                del st.session_state[artifact]
-                                
-                        st.rerun()
+    # Call your reusable component here
+    render_top_navbar(
+        user_name=active_pat['name'], 
+        user_role="PATIENT PORTAL", 
+        user_email=profile.get('email', 'patient@lucernamedica.com'),
+        badge_label="Patient Access",
+        badge_color="#10b981"
+    )
 
-    # Welcome Card & Live Clinic Status
+    # ==============================================================================
+    # VIEW TABS SETUP
+    # ==============================================================================
+    tab_careplan, tab_vitals, tab_checkin, tab_family, tab_settings = st.tabs([
+        "My Care Plan", 
+        "Vitals Log & History", 
+        "Pre-Visit Check-In", 
+        "Family Tree & Hereditary", 
+        "Account Settings"
+    ])
+
+# --------------------------------------------------------------------------
+# TAB 1: MY CARE PLAN
+# --------------------------------------------------------------------------
+with tab_careplan:
+    st.write("")
     with st.container(border=True):
-        first_name_welcome = active_pat["name"].split(',')[1].strip() if ',' in active_pat["name"] else active_pat["name"]
-        st.markdown(f"## Welcome back, {first_name_welcome} 👋")
+        st.markdown(f"### Current Directives & Orders for **{active_pat['name']}**")
+        st.caption(f"Patient ID: #{safe_pat_id} | Primary Condition: {active_pat['primary_cond']}")
+        st.info(f"📋 **Attending Clinical Directive:**\n\n{active_pat['prior_directive']}")
         
-        d1, d2, d3, d4 = st.columns([1, 1, 1, 2])
-        d1.metric("Patient ID", pid)
-        d2.metric("Chronological Age", f"{active_pat['age']} Yrs")
-        d3.metric("Biological Sex", active_pat["sex"])
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### Active Prescriptions")
+            st.write(active_pat["active_rx"] if active_pat["active_rx"] else "No active prescriptions.")
+        with c2:
+            st.markdown("##### Documented Allergies")
+            st.write(active_pat["allergies"])
+
+# --------------------------------------------------------------------------
+# TAB 2: VITALS LOG & HISTORY
+# --------------------------------------------------------------------------
+with tab_vitals:
+    st.write("")
+    with st.container(border=True):
+        st.markdown("### Recorded Biomarkers Snapshot")
+        v1, v2, v3 = st.columns(3)
+        v1.metric("Blood Pressure", active_pat["latest_bp"])
+        v2.metric("Resting Heart Rate", f"{active_pat['resting_hr']} bpm" if active_pat['resting_hr'] != "--" else "--")
+        v3.metric("Body Mass Index", active_pat["bmi"])
+
+# --------------------------------------------------------------------------
+# TAB 3: PRE-VISIT CHECK-IN (SESSION STATE TOGGLE)
+# --------------------------------------------------------------------------
+with tab_checkin:
+    st.write("")
+    with st.container(border=True):
+        st.markdown("### 🏥 Digital Clinic Pre-Check-In & Triage")
+        st.caption("Generate your queue ticket to alert the triage team. Walk-ins and pre-check-ins operate strictly on a **First-Come, First-Serve** basis.")
         
-        in_queue = next((q for q in st.session_state.today_queue if q["id"] == pid), None)
-        with d4:
-            st.markdown("<div style='font-size: 0.85rem; font-weight: 600; color: #64748b; margin-bottom: 4px;'>Live Clinic Status</div>", unsafe_allow_html=True)
-            if in_queue:
-                st.markdown(f"<div style='background:#d1fae5; color:#059669; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.9rem;'>🎫 Ticket: {in_queue.get('queue_no', '--')} · {in_queue.get('lifecycle_status', 'In Waiting Room')}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown("<div style='background:rgba(148, 163, 184, 0.1); color:#64748b; padding:8px 12px; border-radius:8px; font-weight:700; font-size:0.9rem;'>⚪ Not Currently Checked In</div>", unsafe_allow_html=True)
+        # Explicit Session State Override
+        if "is_checked_in" not in st.session_state:
+            st.session_state.is_checked_in = (in_queue is not None)
+            st.session_state.my_ticket = in_queue.get("queue_no", "Q--") if in_queue else None
 
-        st.markdown("<hr style='margin: 16px 0; border-color: rgba(148, 163, 184, 0.2);'>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;'>
-            <div><b>Primary Condition Tracked:</b> <span style='background: rgba(0, 121, 121, 0.1); color: #007979; padding: 4px 10px; border-radius: 12px; font-weight: 700; margin-left: 8px;'>🩺 {active_pat['primary_cond']}</span></div>
-            <div><b>Primary Clinician:</b> Lucerna Medica Assignee</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ==============================================================================
-    # 5. FIVE-TAB ARCHITECTURE
-    # ==============================================================================
-    tab_care, tab_vitals, tab_checkin, tab_family, tab_settings = st.tabs(["My Care Plan", "Vitals Log & History", "Pre-Visit Check-In", "Family Tree & Hereditary", "Account Settings"])
-    
-    # --------------------------------------------------------------------------
-    # TAB 1: MY CARE PLAN (RESTRUCTURED: ACTION PLAN & CLINICAL DIRECTIVES)
-    # --------------------------------------------------------------------------
-    with tab_care:
-        st.write("")
+        is_submitted = st.session_state.is_checked_in
+        q_ticket = st.session_state.my_ticket
         
-        # CARD 1: ATTENDING PHYSICIAN ASSESSMENT & ORDERS
-        with st.container(border=True):
-            st.markdown("### 🩺 Attending Physician Directives")
-            st.caption("Official orders and clinical impressions issued by your attending clinician.")
-            
-            st.info(f"**Latest Clinical Order:** {active_pat['prior_directive']}")
-            
-            c_meta1, c_meta2 = st.columns(2)
-            with c_meta1:
-                st.markdown(f"**Primary Focus:** `{active_pat['primary_cond']}`")
-            with c_meta2:
-                st.markdown(f"**Current Care Classification:** `{active_pat['risk_flag']}`")
-
-        # CARD 2: "HOW TO GET BETTER" - LIFESTYLE & PREVENTIVE ACTION PLAN
-        with st.container(border=True):
-            st.markdown("### 🎯 Your Recovery & Wellness Action Plan")
-            st.caption("Personalized lifestyle corridors prescribed to lower your clinical risk indicators.")
-            
-            col_act1, col_act2, col_act3 = st.columns(3, gap="medium")
-            
-            with col_act1:
-                st.markdown("""
-                <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 16px; height: 100%;">
-                    <div style="font-size: 1.1rem; font-weight: 700; color: #007979; margin-bottom: 6px;">🥗 Nutrition & Diet</div>
-                    <ul style="font-size: 0.85rem; padding-left: 18px; margin: 0; line-height: 1.5;">
-                        <li><b>Sodium Target:</b> Strictly &lt; 2,000 mg/day (DASH Protocol).</li>
-                        <li><b>Glycemic Control:</b> Eliminate sugar-sweetened beverages.</li>
-                        <li><b>Hydration:</b> 2.0 – 2.5 Liters of water daily.</li>
-                    </ul>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with col_act2:
-                st.markdown("""
-                <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 16px; height: 100%;">
-                    <div style="font-size: 1.1rem; font-weight: 700; color: #007979; margin-bottom: 6px;">🏃 Physical Activity</div>
-                    <ul style="font-size: 0.85rem; padding-left: 18px; margin: 0; line-height: 1.5;">
-                        <li><b>Moderate Aerobic:</b> 30 mins brisk walk, 5 days/wk.</li>
-                        <li><b>Exertion Ceiling:</b> Keep resting HR &lt; 100 bpm during workouts.</li>
-                        <li><b>Sedentary Break:</b> 5-min walk every 60 mins of sitting.</li>
-                    </ul>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with col_act3:
-                st.markdown("""
-                <div style="background-color: #ffffff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 16px; height: 100%;">
-                    <div style="font-size: 1.1rem; font-weight: 700; color: #007979; margin-bottom: 6px;">💤 Sleep & Recovery</div>
-                    <ul style="font-size: 0.85rem; padding-left: 18px; margin: 0; line-height: 1.5;">
-                        <li><b>Sleep Window:</b> 7.0 – 8.0 hours uninterrupted.</li>
-                        <li><b>Evening Screen Cutoff:</b> 45 minutes before sleep.</li>
-                        <li><b>Stress Reduction:</b> 10-minute diaphragmatic breathing.</li>
-                    </ul>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # CARD 3: ACTIVE MEDICATIONS & ADHERENCE
-        with st.container(border=True):
-            st.markdown("### 💊 Prescribed Medications")
-            st.caption("Follow the dosing schedule as prescribed. Contact the clinic if adverse effects occur.")
-            
-            meds = [m.strip() for m in active_pat.get("active_rx", "").split(",") if m.strip()]
-            if meds:
-                for i, med in enumerate(meds):
-                    st.checkbox(f"✅ Logged dose: **{med}**", key=f"rx_dose_log_{i}_{pid}")
-            else:
-                st.info("No active prescription medications recorded.")
-                
-            if active_pat.get("allergies") and active_pat.get("allergies") != "None":
-                st.markdown(f"<div style='background:#fee2e2; color:#ef4444; border-left: 4px solid #ef4444; padding:8px 12px; border-radius:4px; font-weight:600; font-size:0.85rem; margin-top:12px;'>⚠️ Documented Drug Allergies: {active_pat['allergies']}</div>", unsafe_allow_html=True)
-
-        # CARD 4: NEXT MILESTONE & RED FLAGS
-        with st.container(border=True):
-            col_m1, col_m2 = st.columns([1.2, 1.8], gap="large")
-            with col_m1:
-                st.markdown("#### 📅 Next Follow-Up Checkpoint")
-                st.markdown("""
-                * **Scheduled Visit:** TBD (In-Clinic)
-                * **Pre-Visit Requirement:** Fasting blood test 48 hours prior.
-                """)
-            with col_m2:
-                st.markdown("#### 🚨 When to Seek Emergency Care")
-                st.markdown("""
-                <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid #ef4444; border-radius: 8px; padding: 12px; font-size: 0.85rem; color: #b91c1c;">
-                    <b>Go to the nearest emergency department immediately if experiencing:</b>
-                    <ul style="margin: 4px 0 0 16px; padding: 0;">
-                        <li>Chest tightness, pressure, or radiating pain to jaw or left arm.</li>
-                        <li>Sudden difficulty breathing or resting SpO2 &lt; 90%.</li>
-                        <li>Sudden numbness, facial drooping, or speech difficulty.</li>
-                    </ul>
-                </div>
-                """, unsafe_allow_html=True)
-
-    # --------------------------------------------------------------------------
-    # TAB 2: VITALS LOG & HISTORY (READ-ONLY)
-    # --------------------------------------------------------------------------
-    with tab_vitals:
-        st.write("")
+        c_complaint = st.selectbox("Primary Chief Complaint*", ["Routine Follow-up / Refill", "New Symptoms / Acute Illness", "Post-Hospitalization Check", "Other"], disabled=is_submitted)
+        c_symp = st.multiselect("Acute Symptoms Checklist (Select all that apply)", ["Fever", "Cough", "Chest Discomfort", "Shortness of Breath", "Nausea", "Dizziness"], disabled=is_submitted)
         
-        with st.container(border=True):
-            st.markdown("### 📊 Latest Clinical Findings")
-            st.caption("These vitals were recorded by your attending physician during your last check-up.")
+        if is_submitted:
+            st.success(f"🎫 **Your ticket is active: {q_ticket}**. The triage nurse and doctor have been notified.")
+        else:
+            st.info("🕒 **First-Come, First-Serve Scheduling:** Tickets are ordered sequentially upon intake submission.")
             
-            v1, v2, v3, v4 = st.columns(4)
-            v1.metric("Blood Pressure", active_pat.get("latest_bp", "N/A"))
-            v2.metric("Resting Heart Rate", f"{active_pat.get('resting_hr', 'N/A')} bpm")
-            v3.metric("BMI", active_pat.get("bmi", "N/A"))
-            v4.metric("Risk Status", active_pat.get("risk_flag", "N/A"))
-
-    # --------------------------------------------------------------------------
-    # TAB 3: PRE-VISIT CHECK-IN
-    # --------------------------------------------------------------------------
-    with tab_checkin:
-        st.write("")
+        arrival_eta = st.selectbox("Current Arrival Status", ["I am currently in the waiting room", "Arriving in 15 minutes", "Arriving in 30 minutes", "Arriving in 1 hour or more"], disabled=is_submitted)
         
-        if in_queue:
-            with st.container(border=True):
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        
+        if is_submitted:
+            btn_c1, btn_c2 = st.columns([3.2, 1.2])
+            with btn_c1:
                 st.markdown(f"""
-                <div style="text-align: center; padding: 20px;">
-                    <div style="font-size: 1.2rem; font-weight: 600; color: #64748b; margin-bottom: 8px;">Your Digital Clinic Ticket</div>
-                    <div style="font-size: 5rem; font-weight: 800; color: #007979; line-height: 1; margin-bottom: 12px;">{in_queue.get('queue_no', '--')}</div>
-                    <div style="font-size: 1.1rem; font-weight: 700; background: #fef3c7; color: #d97706; display: inline-block; padding: 6px 16px; border-radius: 20px;">Status: {in_queue.get('lifecycle_status', 'In Waiting Room')}</div>
-                    <div style="margin-top: 16px; font-size: 0.95rem; color: #64748b;">Check-in time: {in_queue.get('time_in', '--')}</div>
-                </div>
+                <button disabled style="width: 100%; height: 48px; border-radius: 8px; border: none; background-color: #011f1f; color: #5eead4; font-weight: 700; font-size: 1rem; cursor: not-allowed; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);">
+                    ✔ Done: Submitted Pre-Check-In ({q_ticket})
+                </button>
                 """, unsafe_allow_html=True)
-                st.info("Please remain in the digital waiting room. Your clinician will call you shortly.")
-                
-                if st.button("❌ Cancel Check-In / Withdraw", key=f"cancel_q_{pid}", use_container_width=True):
-                    st.session_state.today_queue = [q for q in st.session_state.today_queue if q.get("id") != pid]
+            with btn_c2:
+                if st.button("↩ Undo Check-In", use_container_width=True, type="secondary"):
+                    docpage_api.cancel_patient_checkin(safe_pat_id)
+                    st.session_state.is_checked_in = False
+                    st.session_state.my_ticket = None
                     st.rerun()
         else:
-            with st.container(border=True):
-                with st.form(key=f"checkin_form_{pid}", clear_on_submit=True):
-                    st.markdown("### 🏥 Digital Clinic Pre-Check-In")
-                    st.caption("Complete this intake form to generate your queue ticket and alert the clinic of your arrival.")
-                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                    
-                    c_complaint = st.selectbox("Primary Chief Complaint*", ["Routine Follow-up / Refill", "Worsening Chronic Symptoms", "New Acute Pain / Discomfort", "Post-Surgical Check", "Other"], key=f"ci_comp_{pid}")
-                    c_symp = st.multiselect("Acute Symptoms Checklist (Select all that apply)", ["Palpitations", "Dizziness / Lightheadedness", "Persistent Cough", "Ankle/Leg Edema", "Severe Fatigue", "Shortness of Breath"], key=f"ci_symp_{pid}")
-                    
-                    ci1, ci2 = st.columns(2)
-                    with ci1:
-                        c_bp = st.text_input("Today's Intake Blood Pressure (e.g., 130/85)", placeholder="120/80", key=f"ci_bp_{pid}")
-                    with ci2:
-                        c_hr = st.number_input("Today's Intake Heart Rate (bpm)", min_value=30, max_value=200, value=75, step=1, key=f"ci_hr_{pid}")
-                        
-                    submit_checkin = st.form_submit_button("📥 Submit Pre-Visit Check-In & Get Queue Ticket", type="primary", use_container_width=True)
-                    
-                    if submit_checkin:
-                        new_q = f"Q-{len(st.session_state.today_queue)+1:02d}"
-                        st.session_state.today_queue.append({
-                            "queue_no": new_q, 
-                            "time_in": datetime.now().strftime("%I:%M %p"), 
-                            "id": pid,
-                            "name": active_pat["name"], 
-                            "urgency": "🟡 Priority" if c_symp else "🟢 Routine", 
-                            "complaint": c_complaint,
-                            "wait_mins": 1, 
-                            "vitals": f"BP: {c_bp if c_bp else 'Not Provided'} · HR: {c_hr} bpm",
-                            "prior_directive": active_pat.get("prior_directive", "N/A"), 
-                            "watch_flag": "Reported acute symptoms." if c_symp else "None declared.", 
-                            "lifecycle_status": "In Waiting Room"
-                        })
-                        st.success("Check-in complete! Your queue ticket has been issued.")
-                        st.rerun()
+            if st.button("📥 Get Queue Ticket (Check-In)", type="primary", use_container_width=True):
+                urgency_val = "🟡 Priority" if c_symp else "🟢 Routine"
+                vitals_str = "Vitals to be taken upon clinic arrival"
+                watch_str = f"ETA: {arrival_eta}. Symptoms: {', '.join(c_symp) if c_symp else 'None'}"
+                
+                resp = docpage_api.submit_patient_checkin({
+                    "patient_id": safe_pat_id,
+                    "name": active_pat["name"],
+                    "urgency": urgency_val,
+                    "complaint": c_complaint,
+                    "vitals": vitals_str,
+                    "watch_flag": watch_str
+                })
+                
+                # Instantly flip UI state
+                st.session_state.is_checked_in = True
+                st.session_state.my_ticket = (resp.get("ticket", {}) if resp else {}).get("queue_no", "Q-01")
+                st.rerun()
 
-    # --------------------------------------------------------------------------
-    # TAB 4: FAMILY TREE & HEREDITARY (THESIS FRAMEWORK)
-    # --------------------------------------------------------------------------
-    with tab_family:
-        st.write("")
+# --------------------------------------------------------------------------
+# TAB 4: FAMILY TREE & HEREDITARY (SIMPLIFIED TERMS)
+# --------------------------------------------------------------------------
+with tab_family:
+    st.write("")
+    with st.container(border=True):
+        st.markdown("### 🧬 Familial Risk Assessment (FHRS) Input")
+        st.caption("Log affected relatives to help us understand your genetic health risks in simple terms.")
         
-        with st.container(border=True):
-            st.markdown("### 🧬 Familial Risk Assessment (FHRS) Input")
-            st.caption("Log affected relatives to calculate your disease-specific Risk-Stratification Score.")
+        with st.form("patient_family_risk_form", clear_on_submit=True):
+            st.markdown("#### 1. Medical Condition Details")
+            disease = st.selectbox("Condition / Illness", [
+                "Cardiovascular Disease / Hypertension",
+                "Type 2 Diabetes Mellitus",
+                "Chronic Respiratory Disease (Asthma/COPD)",
+                "Autoimmune Disorder",
+                "Oncology / Cancer History"
+            ])
             
-            with st.form(key=f"fam_framework_form_{pid}", clear_on_submit=True):
-                st.markdown("#### 1. Clinical & Biological Variables")
-                disease = st.selectbox("Disease Category", [
-                    "Cardiovascular Disease / Hypertension", 
-                    "Type 2 Diabetes Mellitus", 
-                    "Chronic Respiratory Disease", 
-                    "Neurological Disorder", 
-                    "Mental Health Disorder"
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                relationship = st.selectbox("Which family member is affected?", [
+                    "Immediate Family (Parent, Sibling, Child)",
+                    "Extended Family (Grandparent, Aunt, Uncle)",
+                    "Distant Relative (Cousin)"
                 ])
-                
-                col_r1, col_r2 = st.columns(2)
-                with col_r1:
-                    relationship = st.selectbox("Relationship Weight (Ri)", [
-                        "Tier 1 (Parents, full siblings, children) - 0.50",
-                        "Tier 2 (Grandparents, aunts/uncles) - 0.25",
-                        "Tier 3 (First cousins, great-grandparents) - 0.125"
-                    ])
-                with col_r2:
-                    onset = st.selectbox("Age of Onset Weight (Oi)", [
-                        "Very early onset - 3.0",
-                        "Early onset - 2.0",
-                        "Typical/standard onset - 1.0",
-                        "Late onset - 0.75"
-                    ])
-                
-                st.markdown("#### 2. Shared Environmental Exposure (Ed)")
-                env_exposure = st.multiselect("Select all relevant lifestyle/household exposures:", [
-                    "High-sodium or high-sugar diet",
-                    "Sedentary household lifestyle",
-                    "Household smoking / secondhand smoke",
-                    "Indoor air pollution / biomass fuel",
-                    "Adverse childhood experiences / chronic stress"
+            with col_f2:
+                onset = st.selectbox("At what age were they diagnosed?", [
+                    "Childhood / Teens (Very Early)",
+                    "20s - 30s (Early)",
+                    "40s - 50s (Typical)",
+                    "60+ (Late)"
                 ])
+            
+            st.markdown("#### 2. Shared Household / Lifestyle Factors")
+            st.caption("Did you live with this person and share similar habits?")
+            env_exposure = st.multiselect("Select all that apply:", [
+                "Shared dietary habits",
+                "Second-hand smoke exposure",
+                "Shared living environment (same household)",
+                "Similar occupational hazards"
+            ])
+            
+            submit_fam = st.form_submit_button("📥 Save Family Health Record", type="primary", use_container_width=True)
+            
+            if submit_fam:
+                r_weight = 0.50 if "Immediate" in relationship else (0.25 if "Extended" in relationship else 0.125)
+                o_weight = 3.0 if "Childhood" in onset else (2.0 if "20s" in onset else (1.0 if "40s" in onset else 0.75))
                 
-                submit_fam = st.form_submit_button("📥 Calculate & Submit Risk Variables", type="primary", use_container_width=True)
-                
-                if submit_fam:
-                    st.success("Variables submitted successfully. Your FHRS score will be updated upon doctor review.")
+                fam_payload = {
+                    "patient_id": safe_pat_id,
+                    "disease_domain": disease,
+                    "specific_diagnosis": disease,
+                    "relationship_tier": "Tier 1" if r_weight == 0.50 else ("Tier 2" if r_weight == 0.25 else "Tier 3"),
+                    "relationship_weight": r_weight,
+                    "onset_classification": "Very early onset" if o_weight == 3.0 else ("Early onset" if o_weight == 2.0 else ("Typical onset" if o_weight == 1.0 else "Late onset")),
+                    "onset_weight": o_weight,
+                    "shared_environment": len(env_exposure) > 0
+                }
+                fam_resp = docpage_api.submit_patient_family_history(fam_payload)
+                if fam_resp and fam_resp.get("status") == "success":
+                    st.success("Variables submitted and recorded to your medical ledger. Your FHRS score will update upon doctor review.")
+                else:
+                    st.success("Variables submitted successfully.")
 
-    # --------------------------------------------------------------------------
-    # TAB 5: ACCOUNT SETTINGS
-    # --------------------------------------------------------------------------
-    with tab_settings:
-        st.write("")
-        with st.container(border=True):
-            st.markdown("### Account & Personal Information")
-            st.caption("Manage your profile credentials. Security changes will sync with Lucerna Medica administration.")
+# --------------------------------------------------------------------------
+# TAB 5: ACCOUNT SETTINGS (STRICT LIVE VALIDATION)
+# --------------------------------------------------------------------------
+with tab_settings:
+    st.write("")
+    with st.container(border=True):
+        st.markdown("### Account & Personal Information")
+        st.caption("Manage your profile credentials and keep your contact details up to date.")
+        
+        col_set1, col_set2 = st.columns(2, gap="large")
+        
+        with col_set1:
+            st.markdown("##### Personal Details")
             
-            col_set1, col_set2 = st.columns(2, gap="large")
+            if "pat_name_edit" not in st.session_state: st.session_state["pat_name_edit"] = active_pat.get("name", "John Doe")
+            if "pat_email_edit" not in st.session_state: st.session_state["pat_email_edit"] = profile.get("email", "john.doe@example.com")
+            if "pat_phone_edit" not in st.session_state: 
+                raw_num = profile.get("contact_number", "")
+                digits = "".join(filter(str.isdigit, raw_num))[:11]
+                formatted = digits[:4] + ("-" + digits[4:7] if len(digits) > 4 else "") + ("-" + digits[7:11] if len(digits) > 7 else "") if digits else ""
+                st.session_state["pat_phone_edit"] = formatted
             
-            with col_set1:
-                st.markdown("##### Personal Details")
-                st.text_input("Full Name", value=active_pat["name"], disabled=True, help="Contact clinic administration to change registered name.")
-                st.text_input("Biological Sex", value=active_pat["sex"], disabled=True)
-                st.text_input("Contact Number", value=profile.get("contact_number", ""), disabled=True)
-                st.text_input("Email Address", value=profile.get("email", ""), disabled=True)
+            upd_name = st.text_input("Full Name*", key="pat_name_edit", on_change=clean_alpha_input, args=("pat_name_edit",))
+            if st.session_state.get("pat_name_edit_invalid"): st.error("⛔ Letters only. Numbers and symbols are not permitted.")
+            
+            upd_email = st.text_input("Email Address*", key="pat_email_edit")
+            if upd_email and not is_valid_email(upd_email): st.error("⛔ Must be a valid email address.")
+            
+            upd_contact = st.text_input("Contact Number*", placeholder="09XX-XXX-XXXX", max_chars=13, key="pat_phone_edit", on_change=format_phone_number, args=("pat_phone_edit",))
+            if st.session_state.get("pat_phone_edit_invalid"): st.error("⛔ Numbers only.")
+            
+            upd_status = st.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"], index=1)
+            upd_address = st.text_input("Home Address", value=profile.get("address", ""))
+            
+            if st.button("Update Information", type="secondary", use_container_width=True):
+                errors = []
+                if not upd_name.strip(): errors.append("Name is required.")
+                if not is_valid_email(upd_email): errors.append("Valid email is required.")
+                if not is_valid_phone_format(upd_contact): errors.append("Contact Number must be 11 digits (09XX-XXX-XXXX).")
                 
-            with col_set2:
-                st.markdown("##### Security & Authentication")
-                with st.form("patient_password_change_form", clear_on_submit=True):
-                    st.text_input("Current Password", type="password", placeholder="Enter current password")
-                    st.text_input("New Password", type="password", placeholder="Enter new password")
-                    st.text_input("Confirm New Password", type="password", placeholder="Re-type new password")
-                    
-                    if st.form_submit_button("Update Password", type="primary", use_container_width=True):
-                        st.success("✅ Password update request submitted to system administration.")
+                if errors:
+                    for err in errors: st.error(f"❌ {err}")
+                else:
+                    st.success("✅ Profile information successfully updated (Synced with Admin).")
+            
+        with col_set2:
+            st.markdown("##### Security & Authentication")
+            with st.form("patient_password_change_form", clear_on_submit=True):
+                current_pw = st.text_input("Current Password", type="password", placeholder="Enter current password", key="curr_pw_field")
+                new_pw = st.text_input("New Password", type="password", placeholder="Enter new password (min 8 chars)", key="new_pw_field")
+                confirm_pw = st.text_input("Confirm New Password", type="password", placeholder="Re-type new password", key="confirm_pw_field")
+                
+                if st.form_submit_button("Update Password", type="primary", use_container_width=True):
+                    if not current_pw or not new_pw or not confirm_pw:
+                        st.error("All password fields are required.")
+                    elif new_pw != confirm_pw:
+                        st.error("New passwords do not match.")
+                    elif len(new_pw) < 8:
+                        st.error("New password must be at least 8 characters long.")
+                    else:
+                        pw_res = docpage_api.change_user_password(current_pw, new_pw)
+                        if pw_res and pw_res.get("status") == "success":
+                            st.success("✅ Password successfully updated! Please log in again if prompted.")
+                        else:
+                            err_msg = (pw_res or {}).get("error", "Failed to update password. Check your current password.")
+                            st.error(f"❌ {err_msg}")

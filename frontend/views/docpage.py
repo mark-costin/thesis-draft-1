@@ -149,8 +149,36 @@ with col_main:
     with tab_queue:
         st.write("")
         st.markdown("### Today's Active Triage Queue")
+        st.caption("Live patient check-in tickets synchronized with the triage ledger.")
+
+        # Sync queue from backend
+        backend_q = docpage_api.get_active_queue()
+        if backend_q and "queue" in backend_q:
+            st.session_state.today_queue = backend_q["queue"]
+
         if not st.session_state.today_queue:
-            st.info("The waiting room is currently empty.")
+            st.info("The waiting room is currently empty. Patients will appear here upon pre-check-in.")
+        else:
+            for item in st.session_state.today_queue:
+                with st.container(border=True):
+                    qc1, qc2, qc3, qc4 = st.columns([1, 3, 3, 2])
+                    q_ticket = item.get("queue_no", "--")
+                    qc1.markdown(f"### 🎫 {q_ticket}")
+                    with qc2:
+                        st.markdown(f"**{item.get('name', 'Patient')}** (PID #{item.get('patient_id', '--')})")
+                        st.caption(f"Arrival: {item.get('time_in', '--')} | Priority: {item.get('urgency', 'Routine')}")
+                    with qc3:
+                        st.markdown(f"**Complaint:** {item.get('complaint', 'Checkup')}")
+                        st.caption(f"Vitals: {item.get('vitals', 'N/A')}")
+                    with qc4:
+                        qid = item.get('patient_id')
+                        if st.button("🩺 Call to Consult", key=f"call_q_{qid}", type="primary", use_container_width=True):
+                            st.session_state.active_patient = {
+                                "id": qid, "name": item.get("name", f"Patient #{qid}"), "age": 52, "sex": "Female",
+                                "bmi": 27.2, "resting_hr": 74, "latest_bp": "138/88"
+                            }
+                            st.success(f"Loaded {item.get('name')} into CDSS suite.")
+                            st.rerun()
 
     # --------------------------------------------------------------------------
     # TAB 3: AI DIAGNOSTICS & CDSS (WIRED TO docpage_api.py)

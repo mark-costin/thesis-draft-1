@@ -7,6 +7,7 @@ from backend.dbconnect import init_db, db
 from backend.routes.predictions import predictions_bp
 from backend.routes.doctor import doctor_bp
 from backend.routes.auth0 import auth_bp
+from backend.routes.patient import patient_bp
 from backend.middleware.security import apply_security_headers
 
 # Load environment configuration
@@ -25,6 +26,7 @@ app.after_request(apply_security_headers)
 app.register_blueprint(predictions_bp)
 app.register_blueprint(doctor_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(patient_bp)
 
 with app.app_context():
     # Import ORM models to register tables with SQLAlchemy metadata

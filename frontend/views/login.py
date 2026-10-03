@@ -181,6 +181,7 @@ with col_main:
                                 else:
                                     st.session_state["authenticated"] = True
                                     st.session_state["jwt_token"] = data.get("access_token")
+                                    st.session_state["token"] = data.get("access_token")
                                     st.session_state["user_role"] = backend_role
                                     
                                     # Ensure the username used to login is always preserved

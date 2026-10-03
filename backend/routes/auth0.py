@@ -151,6 +151,10 @@ def login():
         "token_version": user.token_version,
         "exp": exp_time
     }
+    if user.role == "PATIENT" and user.patient:
+        payload["patient_id"] = user.patient.patient_id
+    elif user.role in ["DOCTOR", "CLINICIAN"] and user.doctor:
+        payload["doctor_id"] = user.doctor.doctor_id
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
     # Hydrate profile data based on role
@@ -189,7 +193,42 @@ def logout():
 
     # Incrementing token_version ensures any previously issued JWT is now considered invalid
     # (Requires updating the @role_required middleware to check token_version against the DB if strict state is desired)
-    user.token_version += 1
+    user.token_version = (user.token_version or 0) + 1
     db.session.commit()
 
     return jsonify({"message": "Successfully logged out across all active sessions"}), 200
+
+@auth_bp.route('/change-password', methods=['POST'])
+@role_required(["PATIENT", "DOCTOR", "CLINICIAN", "ADMIN", "SYSTEM_ADMIN", "IT_SUPPORT", "COMPLIANCE_AUDITOR"])
+def change_password():
+    """
+    Enables authenticated users to update their credentials securely.
+    """
+    claims = request.current_user
+    user_id = claims.get("user_id")
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request payload cannot be empty"}), 400
+
+    current_password = data.get("current_password")
+    new_password = data.get("new_password")
+
+    if not current_password or not new_password:
+        return jsonify({"error": "Both current_password and new_password are required"}), 400
+
+    if len(new_password) < 8:
+        return jsonify({"error": "New password must be at least 8 characters long"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User record not found"}), 404
+
+    if not user.check_password(current_password):
+        return jsonify({"error": "Incorrect current password"}), 401
+
+    user.set_password(new_password)
+    user.token_version = (user.token_version or 0) + 1
+    db.session.commit()
+
+    return jsonify({"status": "success", "message": "Password successfully updated"}), 200

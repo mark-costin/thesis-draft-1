@@ -1,3 +1,4 @@
+import frontend.docpage_api as docpage_api
 import streamlit as st
 from datetime import datetime
 
@@ -138,6 +139,10 @@ def render_top_navbar(user_name, user_role, user_email, badge_label="System Acce
                     st.divider()
                     st.markdown(f"<div style='text-align: center; color: #007979; font-size: 0.85rem; margin-bottom: 10px;'>{user_email}</div>", unsafe_allow_html=True)
                     if st.button("⏻ Log Out", type="primary", use_container_width=True, key="nav_btn_logout"):
+                        try:
+                            docpage_api.perform_backend_logout()
+                        except Exception:
+                            pass
                         auth_artifacts = [
                             "authenticated", "jwt_token", "user_role", "user_id", "user_profile",
                             "logged_in_patient_id", "active_patient", "cdss_inference_payload", "ai_inference_completed"
