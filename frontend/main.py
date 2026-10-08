@@ -1,4 +1,10 @@
 import streamlit as st
+import sys
+import os
+
+# checking for root folder accounts (patienpage etc... )
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 
 # 1. Page Config
 st.set_page_config("HEART ", layout="wide", initial_sidebar_state="collapsed")

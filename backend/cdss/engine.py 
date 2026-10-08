@@ -1,0 +1,36 @@
+import numpy as np
+from backend.cdss.model_loader import ModelRegistry
+from backend.cdss.explain import compute_shap_drivers
+
+_registry = ModelRegistry()
+
+
+def build_feature_vector(payload: dict, disease: str):
+    """Align input payload with model feature schema."""
+    meta = _registry.metadata(disease)
+    feature_names = meta.get("feature_columns", [])
+
+    if not feature_names:
+        return [], np.zeros((1, 1))
+
+    row = [payload.get(col, np.nan) for col in feature_names]
+    return feature_names, np.array([row], dtype=float)
+
+
+def evaluate_biomarkers(disease: str, payload: dict) -> dict:
+    """Run inference and TreeSHAP attribution for a specific disease head."""
+    model = _registry.load(disease)
+    feature_names, X = build_feature_vector(payload, disease)
+
+    proba = model.predict_proba(X)
+    score = float(proba[0, 1]) * 100.0
+
+    tier = "HIGH" if score >= 70.0 else ("MODERATE" if score >= 40.0 else "LOW")
+    drivers = compute_shap_drivers(model, X, feature_names)
+
+    return {
+        "score": round(score, 2),
+        "tier": tier,
+        "drivers": drivers,
+        "model_version": _registry.metadata(disease).get("model_version", "stub"),
+    }

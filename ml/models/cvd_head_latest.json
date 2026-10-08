@@ -1,0 +1,11 @@
+{
+  "model_version": "v1.0-test",
+  "feature_columns": [
+    "systolic_bp",
+    "bmi",
+    "age",
+    "biological_sex"
+  ],
+  "holdout_auroc": 0.842,
+  "holdout_ece": 0.031
+}
