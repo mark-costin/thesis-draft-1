@@ -1,0 +1,7 @@
+{
+  "status": "passed",
+  "cv_auroc": 0.8146,
+  "fhrs_drop": 0.0247,
+  "max_nmi": 0.3251,
+  "missing_pct": 11.46
+}

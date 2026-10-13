@@ -1,0 +1,19 @@
+{
+  "mean": 29.7,
+  "std": 6.8,
+  "p25": 24.8,
+  "p50": 28.5,
+  "p75": 33.2,
+  "min": 12.0,
+  "max": 60.0,
+  "male": {
+    "mean": 29.1,
+    "std": 6.2
+  },
+  "female": {
+    "mean": 30.2,
+    "std": 7.4
+  },
+  "note": "min/max are CDSS Data Dictionary bounds, not survey extremes",
+  "source_status": "Unverified: quartiles not yet matched to a published NHANES table; used as approximate adult BMI reference"
+}

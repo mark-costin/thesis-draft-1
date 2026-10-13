@@ -1,0 +1,9 @@
+{
+  "annual_drift": {
+    "systolic_bp": 0.6,
+    "bmi": 0.15,
+    "hba1c": 0.02,
+    "egfr": -0.8
+  },
+  "source": "Atherosclerosis Risk in Communities (ARIC) Study"
+}

@@ -1,0 +1,12 @@
+{
+  "coefficients": {
+    "age": 0.065,
+    "systolic_bp": 0.018,
+    "total_cholesterol": 0.008,
+    "hdl": -0.025,
+    "smoking": 0.65,
+    "diabetes": 0.57
+  },
+  "intercept": -10.5,
+  "source": "Framingham Heart Study (D Agostino et al., 2008)"
+}

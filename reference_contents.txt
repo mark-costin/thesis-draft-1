@@ -1,0 +1,88 @@
+== experiment/data/reference/aric_longitudinal_drift.json
+{
+  "annual_drift": {
+    "systolic_bp": 0.6,
+    "bmi": 0.15,
+    "hba1c": 0.02,
+    "egfr": -0.8
+  },
+  "source": "Atherosclerosis Risk in Communities (ARIC) Study"
+}
+== experiment/data/reference/framingham_cvd_coefficients.json
+{
+  "coefficients": {
+    "age": 0.065,
+    "systolic_bp": 0.018,
+    "total_cholesterol": 0.008,
+    "hdl": -0.025,
+    "smoking": 0.65,
+    "diabetes": 0.57
+  },
+  "intercept": -10.5,
+  "source": "Framingham Heart Study (D Agostino et al., 2008)"
+}
+== experiment/data/reference/nhanes_bmi_2017_2020.json
+{
+  "mean": 29.7,
+  "std": 6.8,
+  "p25": 24.8,
+  "p50": 28.5,
+  "p75": 33.2,
+  "min": 12.0,
+  "max": 60.0,
+  "male": {
+    "mean": 29.1,
+    "std": 6.2
+  },
+  "female": {
+    "mean": 30.2,
+    "std": 7.4
+  }
+}
+== experiment/data/reference/nhanes_hba1c_2017_2020.json
+{
+  "mean": 5.65,
+  "std": 0.95,
+  "p25": 5.2,
+  "p50": 5.4,
+  "p75": 5.8,
+  "min": 4.0,
+  "max": 15.0
+}
+== experiment/data/reference/nhanes_lipids_2017_2020.json
+{
+  "total_cholesterol": {
+    "mean": 188.5,
+    "std": 40.2,
+    "min": 100.0,
+    "max": 400.0
+  },
+  "hdl": {
+    "mean": 53.4,
+    "std": 15.1,
+    "min": 15.0,
+    "max": 120.0
+  },
+  "ldl": {
+    "mean": 111.2,
+    "std": 35.6,
+    "min": 30.0,
+    "max": 300.0
+  },
+  "triglycerides": {
+    "mean": 135.0,
+    "std": 82.5,
+    "min": 40.0,
+    "max": 1000.0
+  }
+}
+== experiment/data/reference/nhanes_sbp_2017_2020.json
+{
+  "mean": 124.5,
+  "std": 17.2,
+  "p25": 112.0,
+  "p50": 122.0,
+  "p75": 134.0,
+  "min": 70.0,
+  "max": 220.0
+}
