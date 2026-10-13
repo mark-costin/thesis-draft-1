@@ -8,4 +8,7 @@ __pycache__/
 
 # IDE configurations
 .vscode/
-.idea/
+.idea/experiment/mlruns/
+mlruns/
+.venv/
+.env
