@@ -1,0 +1,81 @@
+{
+  "disease": "cvd",
+  "model_version": "v1",
+  "trained_at_utc": "2026-10-13T13:12:11.901284+00:00",
+  "cohort_sha256": "23d28b00c57b3895f914526d446e8623b4a96b8adc0996a51e6306821fbcb5e3",
+  "feature_columns": [
+    "age",
+    "biological_sex",
+    "systolic_bp",
+    "diastolic_bp",
+    "resting_hr",
+    "total_cholesterol",
+    "hdl",
+    "ldl",
+    "tg",
+    "egfr",
+    "adjusted_fhrs_cvd",
+    "fhrs_band_cvd",
+    "m_ldl",
+    "m_tg",
+    "m_total_cholesterol",
+    "v_systolic_bp",
+    "v_egfr",
+    "m_velocity"
+  ],
+  "best_params": {
+    "n_estimators": 300,
+    "max_depth": 2,
+    "learning_rate": 0.016814664537329736,
+    "subsample": 0.6717651093905124,
+    "colsample_bytree": 0.9501498081979595,
+    "min_child_weight": 2.054376776749966,
+    "reg_lambda": 0.00503744785638522,
+    "gamma": 0.6995858533185473,
+    "scale_pos_weight": 1.7709594140607943
+  },
+  "neg_pos_ratio": 10.43070652173913,
+  "n_trials": 100,
+  "seed": 42,
+  "loss_weights": {
+    "auroc": 0.35,
+    "auprc": 0.25,
+    "ece": 0.2,
+    "brier": 0.1,
+    "subgroup": 0.1
+  },
+  "cv_metrics": {
+    "auroc": 0.8099692836096739,
+    "auprc": 0.3211963440263824,
+    "ece": 0.01860263165335746,
+    "brier": 0.0708950862288475,
+    "subgroup_gap": 0.10163801425863858,
+    "loss": 0.2571855011094386
+  },
+  "calibration_method": "sigmoid",
+  "conformal": {
+    "alpha": 0.1,
+    "q_hat": {
+      "0": 0.17292923890484402,
+      "1": 0.9649087122560056
+    },
+    "calib_conf_coverage_by_class": {
+      "0": 0.900990099009901,
+      "1": 0.9103448275862069
+    }
+  },
+  "tier_cutoffs": [
+    0.2,
+    0.5
+  ],
+  "library_versions": {
+    "python": "3.14.8",
+    "numpy": "2.5.1",
+    "pandas": "3.0.5",
+    "sklearn": "1.9.1",
+    "xgboost": "3.4.1",
+    "optuna": "5.0.0",
+    "joblib": "1.6.0"
+  },
+  "artifact_sha256": "84e20c01290054c230b6a721886502ce7d240d1c1dc5010a6696407909a2e838"
+}

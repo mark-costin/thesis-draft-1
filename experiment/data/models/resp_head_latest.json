@@ -1,0 +1,73 @@
+{
+  "disease": "resp",
+  "model_version": "v1",
+  "trained_at_utc": "2026-10-13T13:16:04.724832+00:00",
+  "cohort_sha256": "23d28b00c57b3895f914526d446e8623b4a96b8adc0996a51e6306821fbcb5e3",
+  "feature_columns": [
+    "age",
+    "biological_sex",
+    "fev1",
+    "fvc",
+    "fev1_fvc_ratio",
+    "spo2",
+    "adjusted_fhrs_resp",
+    "fhrs_band_resp",
+    "m_spirometry",
+    "m_spo2"
+  ],
+  "best_params": {
+    "n_estimators": 150,
+    "max_depth": 2,
+    "learning_rate": 0.032523076653664384,
+    "subsample": 0.8013474161497284,
+    "colsample_bytree": 0.7959929142917619,
+    "min_child_weight": 11.64328670135113,
+    "reg_lambda": 0.011477480031286923,
+    "gamma": 3.0124712270717673,
+    "scale_pos_weight": 1.3632701937642722
+  },
+  "neg_pos_ratio": 7.070023980815348,
+  "n_trials": 100,
+  "seed": 42,
+  "loss_weights": {
+    "auroc": 0.35,
+    "auprc": 0.25,
+    "ece": 0.2,
+    "brier": 0.1,
+    "subgroup": 0.1
+  },
+  "cv_metrics": {
+    "auroc": 0.7364337997999921,
+    "auprc": 0.3245881941266027,
+    "ece": 0.017631471731109533,
+    "brier": 0.09790833741426468,
+    "subgroup_gap": 0.04789029148914568,
+    "loss": 0.279207278774915
+  },
+  "calibration_method": "isotonic",
+  "conformal": {
+    "alpha": 0.1,
+    "q_hat": {
+      "0": 0.22289156913757324,
+      "1": 0.929411768913269
+    },
+    "calib_conf_coverage_by_class": {
+      "0": 0.9474025974025974,
+      "1": 0.9140271493212669
+    }
+  },
+  "tier_cutoffs": [
+    0.2,
+    0.5
+  ],
+  "library_versions": {
+    "python": "3.14.8",
+    "numpy": "2.5.1",
+    "pandas": "3.0.5",
+    "sklearn": "1.9.1",
+    "xgboost": "3.4.1",
+    "optuna": "5.0.0",
+    "joblib": "1.6.0"
+  },
+  "artifact_sha256": "a5c5b67b260962b12f2b9508bb4e51da9a720abb946395f3627d01e186aa8bac"
+}

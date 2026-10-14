@@ -1,0 +1,73 @@
+{
+  "disease": "neuro",
+  "model_version": "v1",
+  "trained_at_utc": "2026-10-13T13:18:04.699708+00:00",
+  "cohort_sha256": "23d28b00c57b3895f914526d446e8623b4a96b8adc0996a51e6306821fbcb5e3",
+  "feature_columns": [
+    "age",
+    "biological_sex",
+    "mmse",
+    "phq9",
+    "gad7",
+    "sleep_hours",
+    "adjusted_fhrs_neuro",
+    "fhrs_band_neuro",
+    "m_gad7",
+    "m_phq9"
+  ],
+  "best_params": {
+    "n_estimators": 450,
+    "max_depth": 2,
+    "learning_rate": 0.024638763905683442,
+    "subsample": 0.9181181349415186,
+    "colsample_bytree": 0.8257887537495334,
+    "min_child_weight": 18.142460403568716,
+    "reg_lambda": 0.00598968069835564,
+    "gamma": 4.347993240855871,
+    "scale_pos_weight": 2.50672399760971
+  },
+  "neg_pos_ratio": 12.905785123966941,
+  "n_trials": 100,
+  "seed": 42,
+  "loss_weights": {
+    "auroc": 0.35,
+    "auprc": 0.25,
+    "ece": 0.2,
+    "brier": 0.1,
+    "subgroup": 0.1
+  },
+  "cv_metrics": {
+    "auroc": 0.8126718699569844,
+    "auprc": 0.33096405233631937,
+    "ece": 0.011843922051191662,
+    "brier": 0.05770345777273178,
+    "subgroup_gap": 0.0905672915700307,
+    "loss": 0.2500196917754902
+  },
+  "calibration_method": "sigmoid",
+  "conformal": {
+    "alpha": 0.1,
+    "q_hat": {
+      "0": 0.12203826973850607,
+      "1": 0.9678902820335584
+    },
+    "calib_conf_coverage_by_class": {
+      "0": 0.9013398294762485,
+      "1": 0.907563025210084
+    }
+  },
+  "tier_cutoffs": [
+    0.2,
+    0.5
+  ],
+  "library_versions": {
+    "python": "3.14.8",
+    "numpy": "2.5.1",
+    "pandas": "3.0.5",
+    "sklearn": "1.9.1",
+    "xgboost": "3.4.1",
+    "optuna": "5.0.0",
+    "joblib": "1.6.0"
+  },
+  "artifact_sha256": "2db52e4522bcc92777d810b6017ada3d7dd75d8c3fba7ba48aff987c66f40ab1"
+}
