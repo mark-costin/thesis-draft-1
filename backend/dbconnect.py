@@ -14,11 +14,9 @@ def init_db(app):
     """
     Configures database engine options and binds SQLAlchemy to the active Flask app context.
     """
-    database_url = os.getenv("DATABASE_URL", "sqlite:///clinic.db")
-    
-    # Standardize PostgreSQL dialect for SQLAlchemy 2.0+ compatibility if applicable
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    # Required, no fallback: see backend/config.py database_url().
+    from backend.config import database_url as required_database_url
+    database_url = required_database_url()
 
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False

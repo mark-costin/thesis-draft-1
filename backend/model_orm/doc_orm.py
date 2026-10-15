@@ -1,5 +1,5 @@
-from datetime import datetime
 from backend.dbconnect import db
+from backend.timeutil import utc_now_naive
 
 class Doctor(db.Model):
     __tablename__ = 'doctors'
@@ -25,5 +25,5 @@ class Doctor(db.Model):
     emergency_relation = db.Column(db.String(50), nullable=False)
     
     is_verified = db.Column(db.Boolean, default=False)  # an admin verifies before first login
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now_naive)
+    updated_at = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)

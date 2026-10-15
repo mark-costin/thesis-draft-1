@@ -186,7 +186,7 @@ def logout():
     current_user_claims = request.current_user
     user_id = current_user_claims.get("user_id")
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User record not found"}), 404
 
@@ -219,7 +219,7 @@ def change_password():
     if len(new_password) < 8:
         return jsonify({"error": "New password must be at least 8 characters long"}), 400
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User record not found"}), 404
 

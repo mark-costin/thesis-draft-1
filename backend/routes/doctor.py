@@ -52,7 +52,7 @@ def get_triage_queue():
 @role_required(['DOCTOR', 'ADMIN'])
 def get_patient_record(patient_id):
     """Fetches a complete patient clinical record."""
-    patient = Patient.query.get(patient_id)
+    patient = db.session.get(Patient, patient_id)
     if not patient:
         return jsonify({"error": "Patient record not found"}), 404
         
@@ -131,7 +131,7 @@ def submit_consultation():
     if not patient_id or not directives:
         return jsonify({"error": "patient_id and directives are required"}), 400
 
-    patient = Patient.query.get(patient_id)
+    patient = db.session.get(Patient, patient_id)
     if not patient:
         return jsonify({"error": "Target patient not found"}), 404
 

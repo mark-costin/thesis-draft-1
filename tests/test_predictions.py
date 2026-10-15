@@ -188,6 +188,7 @@ class PredictionRouteTests(unittest.TestCase):
         self.assertEqual(body["risk"]["tier"], "UNAVAILABLE")
         self.assertTrue(body["is_stub"])
 
+
     def test_fhrs_breakdown_is_the_real_score(self):
         write_model(self.dir)
         fhrs = self.infer().get_json()["fhrs_decomposition"]

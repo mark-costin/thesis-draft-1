@@ -1,5 +1,5 @@
 from backend.dbconnect import db
-from datetime import datetime
+from backend.timeutil import utc_now_naive
 from pgvector.sqlalchemy import Vector  # <-- Must import Vector
 
 # ... keep existing models: IdempotencyCache, FamilyHistory, FHRSStratification, CVDMetrics, etc. ...
@@ -11,4 +11,4 @@ class ClinicalVector(db.Model):
     patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), unique=True, nullable=False)
     disease_narrative = db.Column(db.Text, nullable=True)
     embedding = db.Column(Vector(384), nullable=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)

@@ -41,4 +41,7 @@ with app.app_context():
     db.create_all()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Host, port and debug come from .env (FLASK_HOST, FLASK_PORT, FLASK_DEBUG).
+    # Default: this computer only, debug off. See backend/config.py run_options().
+    from backend.config import run_options
+    app.run(**run_options())
