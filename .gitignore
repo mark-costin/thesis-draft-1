@@ -13,3 +13,4 @@ mlruns/
 .venv/
 .env
 .env
+old_encounters_backup.json
