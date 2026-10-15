@@ -33,7 +33,7 @@ class User(db.Model):
 
     def record_failed_attempt(self, max_attempts=5):
         """Increments the failed login count and locks the account if the threshold is met."""
-        self.failed_attempts += 1
+        self.failed_attempts = (self.failed_attempts or 0) + 1  # NULL in rows created outside the ORM
         if self.failed_attempts >= max_attempts:
             self.is_locked = True
 

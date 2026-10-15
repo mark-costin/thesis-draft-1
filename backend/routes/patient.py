@@ -1,41 +1,42 @@
-import uuid
-from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from backend.dbconnect import db
 from backend.model_orm.pat_orm import Patient
 from backend.model_orm.doc_orm import Doctor
-from backend.model_orm.clinic_orm import Encounter, FamilyHistory, FHRSStratification
+from backend.model_orm.clinic_orm import Encounter, FamilyHistory
 from backend.middleware.rbac import role_required
 from backend.middleware.sanitizer import sanitize_response
+from backend.triage_queue import TriageQueue
+from backend.validation import ValidationError, family_history_weights, parse_patient_id
 
 patient_bp = Blueprint('patient', __name__, url_prefix='/api/v1/patient')
 
-# In-memory shared triage queue store synchronized with backend runtime
-_ACTIVE_TRIAGE_QUEUE = []
+# Shared triage queue for this server process (see backend/triage_queue.py)
+QUEUE = TriageQueue()
 
 
 def _resolve_patient_id(claims, requested_id=None):
     """
-    Resolves patient_id from JWT claims or fallback requested_id.
+    The patient a request is about.
+      - PATIENT: always their own profile, looked up from the database. A requested id
+        is ignored, so a patient can never reach another patient's records.
+      - Staff:   the requested id (validated); None if not given.
+    Raises ValidationError for a malformed requested id.
     """
-    if claims.get("patient_id"):
-        return int(claims["patient_id"])
+    if claims.get("role") == "PATIENT":
+        pat = Patient.query.filter_by(user_id=claims.get("user_id")).first()
+        return pat.patient_id if pat else None
 
-    user_role = claims.get("role")
-    user_id = claims.get("user_id")
-
-    if user_role == "PATIENT":
-        pat = Patient.query.filter_by(user_id=user_id).first()
-        if pat:
-            return pat.patient_id
-        if requested_id:
-            return int(requested_id)
+    if requested_id in (None, ""):
         return None
+    return parse_patient_id(requested_id)
 
-    if requested_id:
-        return int(requested_id)
 
-    return None
+def _target_patient(claims, requested_id):
+    """(patient_id, None) or (None, error response)."""
+    try:
+        return _resolve_patient_id(claims, requested_id), None
+    except ValidationError as exc:
+        return None, (jsonify({"status": "error", "code": "VALIDATION_FAILED", "error": str(exc)}), 400)
 
 
 # --------------------------------------------------------------------------
@@ -46,8 +47,9 @@ def _resolve_patient_id(claims, requested_id=None):
 def get_latest_encounter():
     """Fetches the most recent committed clinical encounter and care plan."""
     claims = request.current_user
-    req_pid = request.args.get("patient_id")
-    target_pid = _resolve_patient_id(claims, req_pid)
+    target_pid, err = _target_patient(claims, request.args.get("patient_id"))
+    if err:
+        return err
 
     if not target_pid:
         return jsonify({"status": "error", "error": "Patient identity could not be resolved."}), 404
@@ -62,7 +64,7 @@ def get_latest_encounter():
             "message": "No committed clinical encounters found for this patient."
         }), 200
 
-    doctor = Doctor.query.get(encounter.doctor_id)
+    doctor = db.session.get(Doctor, encounter.doctor_id)
     doctor_name = f"Dr. {doctor.first_name} {doctor.last_name}" if doctor else "Lucerna Medica Clinician"
 
     payload = {
@@ -88,8 +90,9 @@ def get_latest_encounter():
 def list_encounters():
     """Lists all historical cryptographic encounters for patient timeline view."""
     claims = request.current_user
-    req_pid = request.args.get("patient_id")
-    target_pid = _resolve_patient_id(claims, req_pid)
+    target_pid, err = _target_patient(claims, request.args.get("patient_id"))
+    if err:
+        return err
 
     if not target_pid:
         return jsonify({"status": "error", "error": "Patient identity could not be resolved."}), 404
@@ -99,7 +102,7 @@ def list_encounters():
 
     encounter_list = []
     for enc in encounters:
-        doctor = Doctor.query.get(enc.doctor_id)
+        doctor = enc.doctor
         doctor_name = f"Dr. {doctor.first_name} {doctor.last_name}" if doctor else "Attending Clinician"
         encounter_list.append({
             "encounter_uid": enc.encounter_uid,
@@ -125,8 +128,9 @@ def list_encounters():
 def get_family_history():
     """Retrieves all logged familial hereditary variables for the patient."""
     claims = request.current_user
-    req_pid = request.args.get("patient_id")
-    target_pid = _resolve_patient_id(claims, req_pid)
+    target_pid, err = _target_patient(claims, request.args.get("patient_id"))
+    if err:
+        return err
 
     if not target_pid:
         return jsonify({"status": "error", "error": "Patient not identified"}), 404
@@ -141,9 +145,9 @@ def get_family_history():
             "disease_domain": r.disease_domain,
             "specific_diagnosis": r.specific_diagnosis,
             "relationship_tier": r.relationship_tier,
-            "relationship_weight": float(r.relationship_weight) if r.relationship_weight else 0.0,
+            "relationship_weight": float(r.relationship_weight) if r.relationship_weight is not None else 0.0,
             "onset_classification": r.onset_classification,
-            "onset_weight": float(r.onset_weight) if r.onset_weight else 1.0,
+            "onset_weight": float(r.onset_weight) if r.onset_weight is not None else 1.0,
             "shared_environment": r.shared_environment,
             "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None
         })
@@ -154,34 +158,37 @@ def get_family_history():
 @patient_bp.route('/family-history', methods=['POST'])
 @role_required(['PATIENT', 'DOCTOR', 'ADMIN'])
 def add_family_history():
-    """Records a new familial hereditary risk entry into the database."""
+    """
+    Records a new familial hereditary risk entry.
+    Patients cannot set FHRS weights; clinicians may (validated).
+    """
     claims = request.current_user
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
 
-    target_pid = _resolve_patient_id(claims, data.get("patient_id"))
+    target_pid, err = _target_patient(claims, data.get("patient_id"))
+    if err:
+        return err
     if not target_pid:
         return jsonify({"status": "error", "error": "Valid patient ID is required"}), 400
 
     disease_domain = data.get("disease_domain")
-    specific_diag = data.get("specific_diagnosis", disease_domain)
-    rel_tier = data.get("relationship_tier", "Tier 1")
-    rel_weight = data.get("relationship_weight", 0.5)
-    onset_class = data.get("onset_classification", "Typical onset")
-    onset_weight = data.get("onset_weight", 1.0)
-    shared_env = bool(data.get("shared_environment", False))
-
     if not disease_domain:
         return jsonify({"status": "error", "error": "disease_domain is required"}), 400
+
+    try:
+        rel_weight, onset_weight = family_history_weights(claims.get("role"), data)
+    except ValidationError as exc:
+        return jsonify({"status": "error", "code": "VALIDATION_FAILED", "error": str(exc)}), 400
 
     new_record = FamilyHistory(
         patient_id=target_pid,
         disease_domain=disease_domain,
-        specific_diagnosis=specific_diag,
-        relationship_tier=rel_tier,
+        specific_diagnosis=data.get("specific_diagnosis", disease_domain),
+        relationship_tier=data.get("relationship_tier", "Tier 1"),
         relationship_weight=rel_weight,
-        onset_classification=onset_class,
+        onset_classification=data.get("onset_classification", "Typical onset"),
         onset_weight=onset_weight,
-        shared_environment=shared_env
+        shared_environment=bool(data.get("shared_environment", False))
     )
 
     db.session.add(new_record)
@@ -200,46 +207,33 @@ def add_family_history():
 @patient_bp.route('/queue', methods=['GET'])
 @role_required(['PATIENT', 'DOCTOR', 'ADMIN'])
 def get_queue():
-    """Returns the shared triage queue."""
-    return jsonify({"status": "success", "queue": _ACTIVE_TRIAGE_QUEUE}), 200
+    """Staff see the whole queue; a patient sees only their own ticket."""
+    claims = request.current_user
+    role = claims.get("role")
+    own_pid = _resolve_patient_id(claims) if role == "PATIENT" else None
+    return jsonify({"status": "success", "queue": QUEUE.list_for(role, own_pid)}), 200
 
 
 @patient_bp.route('/queue/checkin', methods=['POST'])
 @role_required(['PATIENT', 'DOCTOR', 'ADMIN'])
 def submit_checkin():
-    """Registers patient in the clinic triage queue and issues a ticket."""
+    """Registers a patient in the triage queue. Only staff can set urgency and watch flags."""
     claims = request.current_user
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
 
-    target_pid = _resolve_patient_id(claims, data.get("patient_id"))
+    target_pid, err = _target_patient(claims, data.get("patient_id"))
+    if err:
+        return err
     if not target_pid:
         return jsonify({"status": "error", "error": "Patient identification required"}), 400
 
-    # Avoid duplicate check-in tickets
-    for item in _ACTIVE_TRIAGE_QUEUE:
-        if item.get("patient_id") == target_pid:
-            return jsonify({
-                "status": "success",
-                "message": "Patient is already checked into queue.",
-                "ticket": item
-            }), 200
-
-    ticket_number = f"Q-{len(_ACTIVE_TRIAGE_QUEUE) + 1:02d}"
-    now_str = datetime.now().strftime("%I:%M %p")
-
-    ticket = {
-        "queue_no": ticket_number,
-        "patient_id": target_pid,
-        "name": data.get("name", f"Patient #{target_pid}"),
-        "time_in": now_str,
-        "urgency": data.get("urgency", "🟢 Routine"),
-        "complaint": data.get("complaint", "Routine follow-up"),
-        "vitals": data.get("vitals", "Not recorded"),
-        "watch_flag": data.get("watch_flag", "None declared"),
-        "lifecycle_status": "In Waiting Room"
-    }
-
-    _ACTIVE_TRIAGE_QUEUE.append(ticket)
+    ticket, created = QUEUE.checkin(target_pid, data, by_staff=claims.get("role") != "PATIENT")
+    if not created:
+        return jsonify({
+            "status": "success",
+            "message": "Patient is already checked into queue.",
+            "ticket": ticket
+        }), 200
 
     return jsonify({
         "status": "success",
@@ -251,11 +245,14 @@ def submit_checkin():
 @patient_bp.route('/queue/<int:patient_id>', methods=['DELETE'])
 @role_required(['PATIENT', 'DOCTOR', 'ADMIN'])
 def cancel_checkin(patient_id):
-    """Cancels a check-in ticket or removes patient from active queue."""
-    global _ACTIVE_TRIAGE_QUEUE
-    before_len = len(_ACTIVE_TRIAGE_QUEUE)
-    _ACTIVE_TRIAGE_QUEUE = [q for q in _ACTIVE_TRIAGE_QUEUE if q.get("patient_id") != patient_id]
+    """Cancels a check-in ticket. A patient may cancel only their own."""
+    claims = request.current_user
+    role = claims.get("role")
+    own_pid = _resolve_patient_id(claims) if role == "PATIENT" else None
 
-    if len(_ACTIVE_TRIAGE_QUEUE) < before_len:
-        return jsonify({"status": "success", "message": "Ticket cancelled."}), 200
-    return jsonify({"status": "error", "message": "Ticket not found."}), 404
+    result = QUEUE.cancel(patient_id, role=role, caller_patient_id=own_pid)
+    if result == "forbidden":
+        return jsonify({"status": "error", "code": "FORBIDDEN", "message": "You can only cancel your own ticket."}), 403
+    if result == "not_found":
+        return jsonify({"status": "error", "message": "Ticket not found."}), 404
+    return jsonify({"status": "success", "message": "Ticket cancelled."}), 200

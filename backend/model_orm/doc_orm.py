@@ -24,6 +24,6 @@ class Doctor(db.Model):
     emergency_contact_number = db.Column(db.String(20), nullable=False)
     emergency_relation = db.Column(db.String(50), nullable=False)
     
-    is_verified = db.Column(db.Boolean, default=True)
+    is_verified = db.Column(db.Boolean, default=False)  # an admin verifies before first login
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -47,10 +47,19 @@ class DatabaseIntegrationTests(unittest.TestCase):
         from backend.model_orm.usr_orm import User
         self.ctx = self.app.app_context()
         self.ctx.push()
+        from backend.model_orm.doc_orm import Doctor
+        self.db.session.query(Doctor).delete()
         self.db.session.query(User).delete()
         user = User(username="doc_test", role="DOCTOR")
         user.set_password("correct-horse-1")
         self.db.session.add(user)
+        self.db.session.flush()
+        # Doctors must have a verified profile to log in (batch 3)
+        self.db.session.add(Doctor(
+            user_id=user.user_id, first_name="Doc", last_name="Test", address="1 Test St",
+            specialization="IM", license_number="PRC-INT-1", contact_number="0900-000-0000",
+            email="doc.test@example.com", emergency_contact_name="Contact",
+            emergency_contact_number="0900-000-0001", emergency_relation="Sibling", is_verified=True))
         self.db.session.commit()
         self.client = self.app.test_client()
 
