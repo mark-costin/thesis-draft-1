@@ -3,7 +3,7 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from backend.biomarker_ranges import CHOICES, RANGES
-from backend.biomarkers import (
+from backend.biomarker_store import (
     column_spec, latest_row, metric_model, patient_exists, row_values, store_biomarkers,
 )
 from backend.middleware.idempotency import enforce_idempotency

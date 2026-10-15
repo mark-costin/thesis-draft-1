@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 import backend.cdss.engine as engine
 from backend.audit import log_event
 from backend.biomarker_ranges import out_of_range
-from backend.biomarkers import latest_biomarkers, patient_exists
+from backend.biomarker_store import latest_biomarkers, patient_exists
 from backend.cdss.features import FeatureError
 from backend.middleware.rbac import role_required
 

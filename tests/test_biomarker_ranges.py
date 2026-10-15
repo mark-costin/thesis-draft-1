@@ -57,7 +57,7 @@ class RangeTableTests(unittest.TestCase):
 
     @unittest.skipUnless(has_modules("sqlalchemy", "flask_sqlalchemy"), "SQLAlchemy not installed")
     def test_every_stored_column_has_a_range_or_allowed_values(self):
-        from backend.biomarkers import column_spec, metric_model
+        from backend.biomarker_store import column_spec, metric_model
         for modality in ("cvd", "t2d", "resp", "neuro"):
             columns = set(column_spec(metric_model(modality)))
             checked = set(self.RANGES[modality]) | set(self.CHOICES.get(modality, {}))
@@ -66,7 +66,7 @@ class RangeTableTests(unittest.TestCase):
     @unittest.skipUnless(has_modules("sqlalchemy", "flask_sqlalchemy"), "SQLAlchemy not installed")
     def test_models_carry_the_same_checks_as_postgresql(self):
         # Same constraint names PostgreSQL already uses, so SQLite tests enforce them too.
-        from backend.biomarkers import metric_model
+        from backend.biomarker_store import metric_model
         names = {c.name for c in metric_model("t2d").__table__.constraints}
         self.assertIn("patient_t2d_metrics_hba1c_check", names)
         names = {c.name for c in metric_model("cvd").__table__.constraints}
