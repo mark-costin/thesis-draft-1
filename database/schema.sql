@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Du0Jq8tHC6J9K5DU0dehbgm3xlrZv8YC1NgkUVm5gA6rkTP8V3nIVCA1UshU8A7
+\restrict tMXzQSqEFubsRtTYquKr8ZxEbINybHIQKradCMkZ4sBf4tGu7Ozmmybxqumu9Ov
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -279,7 +279,27 @@ CREATE TABLE public.patient_cvd_metrics (
     daily_sodium numeric,
     family_history_premature_cvd integer,
     physical_activity numeric,
-    recorded_at timestamp with time zone DEFAULT now()
+    recorded_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT patient_cvd_metrics_age_check CHECK (((age >= (18)::numeric) AND (age <= (100)::numeric))),
+    CONSTRAINT patient_cvd_metrics_biological_sex_check CHECK (((biological_sex)::text = ANY ((ARRAY['Female'::character varying, 'Male'::character varying])::text[]))),
+    CONSTRAINT patient_cvd_metrics_bmi_check CHECK (((bmi >= 12.0) AND (bmi <= 60.0))),
+    CONSTRAINT patient_cvd_metrics_ctni_check CHECK (((ctni >= 0.01) AND (ctni <= 50.0))),
+    CONSTRAINT patient_cvd_metrics_daily_sodium_check CHECK (((daily_sodium >= (500)::numeric) AND (daily_sodium <= (10000)::numeric))),
+    CONSTRAINT patient_cvd_metrics_dbp_check CHECK (((dbp >= (40)::numeric) AND (dbp <= (130)::numeric))),
+    CONSTRAINT patient_cvd_metrics_egfr_check CHECK (((egfr >= (5)::numeric) AND (egfr <= (140)::numeric))),
+    CONSTRAINT patient_cvd_metrics_family_history_premature_cvd_check CHECK (((family_history_premature_cvd >= 0) AND (family_history_premature_cvd <= 1))),
+    CONSTRAINT patient_cvd_metrics_hdl_check CHECK (((hdl >= (15)::numeric) AND (hdl <= (120)::numeric))),
+    CONSTRAINT patient_cvd_metrics_hs_crp_check CHECK (((hs_crp >= 0.1) AND (hs_crp <= 50.0))),
+    CONSTRAINT patient_cvd_metrics_ldl_check CHECK (((ldl >= (30)::numeric) AND (ldl <= (300)::numeric))),
+    CONSTRAINT patient_cvd_metrics_lvef_check CHECK (((lvef >= (15)::numeric) AND (lvef <= (75)::numeric))),
+    CONSTRAINT patient_cvd_metrics_nt_probnp_check CHECK (((nt_probnp >= (10)::numeric) AND (nt_probnp <= (35000)::numeric))),
+    CONSTRAINT patient_cvd_metrics_physical_activity_check CHECK (((physical_activity >= (0)::numeric) AND (physical_activity <= (1050)::numeric))),
+    CONSTRAINT patient_cvd_metrics_resting_hr_check CHECK (((resting_hr >= (40)::numeric) AND (resting_hr <= (180)::numeric))),
+    CONSTRAINT patient_cvd_metrics_sbp_check CHECK (((sbp >= (70)::numeric) AND (sbp <= (220)::numeric))),
+    CONSTRAINT patient_cvd_metrics_serum_creatinine_check CHECK (((serum_creatinine >= 0.4) AND (serum_creatinine <= 10.0))),
+    CONSTRAINT patient_cvd_metrics_smoking_history_check CHECK (((smoking_history >= (0)::numeric) AND (smoking_history <= (120)::numeric))),
+    CONSTRAINT patient_cvd_metrics_total_cholesterol_check CHECK (((total_cholesterol >= (100)::numeric) AND (total_cholesterol <= (400)::numeric))),
+    CONSTRAINT patient_cvd_metrics_triglycerides_check CHECK (((triglycerides >= (40)::numeric) AND (triglycerides <= (1000)::numeric)))
 );
 
 
@@ -407,9 +427,9 @@ CREATE TABLE public.patient_neuro_mental_metrics (
     family_history_neuro_psych integer CONSTRAINT patient_neuro_mental_metric_family_history_neuro_psych_not_null NOT NULL,
     age numeric(4,1) NOT NULL,
     recorded_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT patient_neuro_mental_metrics_age_check CHECK (((age >= (18)::numeric) AND (age <= (90)::numeric))),
+    CONSTRAINT patient_neuro_mental_metrics_age_check CHECK (((age >= (18)::numeric) AND (age <= (100)::numeric))),
     CONSTRAINT patient_neuro_mental_metrics_daily_sleep_check CHECK (((daily_sleep >= 1.0) AND (daily_sleep <= 16.0))),
-    CONSTRAINT patient_neuro_mental_metrics_family_history_neuro_psych_check CHECK ((family_history_neuro_psych = ANY (ARRAY[0, 1]))),
+    CONSTRAINT patient_neuro_mental_metrics_family_history_neuro_psych_check CHECK (((family_history_neuro_psych >= 0) AND (family_history_neuro_psych <= 1))),
     CONSTRAINT patient_neuro_mental_metrics_faq_score_check CHECK (((faq_score >= 0) AND (faq_score <= 30))),
     CONSTRAINT patient_neuro_mental_metrics_gad7_check CHECK (((gad7 >= 0) AND (gad7 <= 21))),
     CONSTRAINT patient_neuro_mental_metrics_ham_d_check CHECK (((ham_d >= 0) AND (ham_d <= 52))),
@@ -421,10 +441,10 @@ CREATE TABLE public.patient_neuro_mental_metrics (
     CONSTRAINT patient_neuro_mental_metrics_seizure_frequency_check CHECK (((seizure_frequency >= (0)::numeric) AND (seizure_frequency <= (100)::numeric))),
     CONSTRAINT patient_neuro_mental_metrics_serum_cortisol_check CHECK (((serum_cortisol >= 1.0) AND (serum_cortisol <= 45.0))),
     CONSTRAINT patient_neuro_mental_metrics_serum_folate_check CHECK (((serum_folate >= 1.0) AND (serum_folate <= 25.0))),
-    CONSTRAINT patient_neuro_mental_metrics_substance_abuse_check CHECK ((substance_abuse = ANY (ARRAY[0, 1]))),
-    CONSTRAINT patient_neuro_mental_metrics_tbi_history_check CHECK ((tbi_history = ANY (ARRAY[0, 1]))),
+    CONSTRAINT patient_neuro_mental_metrics_substance_abuse_check CHECK (((substance_abuse >= 0) AND (substance_abuse <= 1))),
+    CONSTRAINT patient_neuro_mental_metrics_tbi_history_check CHECK (((tbi_history >= 0) AND (tbi_history <= 1))),
     CONSTRAINT patient_neuro_mental_metrics_tremor_rating_check CHECK (((tremor_rating >= 0) AND (tremor_rating <= 4))),
-    CONSTRAINT patient_neuro_mental_metrics_tsh_check CHECK (((tsh >= 0.01) AND (tsh <= 100.00))),
+    CONSTRAINT patient_neuro_mental_metrics_tsh_check CHECK (((tsh >= 0.01) AND (tsh <= 100.0))),
     CONSTRAINT patient_neuro_mental_metrics_updrs_part3_check CHECK (((updrs_part3 >= 0) AND (updrs_part3 <= 132))),
     CONSTRAINT patient_neuro_mental_metrics_vitamin_b12_check CHECK (((vitamin_b12 >= (50)::numeric) AND (vitamin_b12 <= (2000)::numeric)))
 );
@@ -479,18 +499,18 @@ CREATE TABLE public.patient_respiratory_metrics (
     bmi numeric(4,1) NOT NULL,
     recorded_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT patient_respiratory_metrics_act_score_check CHECK (((act_score >= 5) AND (act_score <= 25))),
-    CONSTRAINT patient_respiratory_metrics_allergic_rhinitis_check CHECK ((allergic_rhinitis = ANY (ARRAY[0, 1]))),
+    CONSTRAINT patient_respiratory_metrics_allergic_rhinitis_check CHECK (((allergic_rhinitis >= 0) AND (allergic_rhinitis <= 1))),
     CONSTRAINT patient_respiratory_metrics_annual_exacerbations_check CHECK (((annual_exacerbations >= 0) AND (annual_exacerbations <= 15))),
     CONSTRAINT patient_respiratory_metrics_bmi_check CHECK (((bmi >= 12.0) AND (bmi <= 60.0))),
     CONSTRAINT patient_respiratory_metrics_cat_score_check CHECK (((cat_score >= 0) AND (cat_score <= 40))),
-    CONSTRAINT patient_respiratory_metrics_childhood_asthma_check CHECK ((childhood_asthma = ANY (ARRAY[0, 1]))),
+    CONSTRAINT patient_respiratory_metrics_childhood_asthma_check CHECK (((childhood_asthma >= 0) AND (childhood_asthma <= 1))),
     CONSTRAINT patient_respiratory_metrics_eosinophil_count_check CHECK (((eosinophil_count >= (0)::numeric) AND (eosinophil_count <= (2500)::numeric))),
     CONSTRAINT patient_respiratory_metrics_feno_check CHECK (((feno >= (5)::numeric) AND (feno <= (150)::numeric))),
     CONSTRAINT patient_respiratory_metrics_fev1_check CHECK (((fev1 >= 0.5) AND (fev1 <= 5.5))),
     CONSTRAINT patient_respiratory_metrics_fev1_fvc_ratio_check CHECK (((fev1_fvc_ratio >= 25.0) AND (fev1_fvc_ratio <= 95.0))),
     CONSTRAINT patient_respiratory_metrics_fvc_check CHECK (((fvc >= 1.0) AND (fvc <= 7.0))),
     CONSTRAINT patient_respiratory_metrics_mmrc_score_check CHECK (((mmrc_score >= 0) AND (mmrc_score <= 4))),
-    CONSTRAINT patient_respiratory_metrics_occupational_dust_check CHECK ((occupational_dust = ANY (ARRAY[0, 1]))),
+    CONSTRAINT patient_respiratory_metrics_occupational_dust_check CHECK (((occupational_dust >= 0) AND (occupational_dust <= 1))),
     CONSTRAINT patient_respiratory_metrics_paco2_check CHECK (((paco2 >= (25)::numeric) AND (paco2 <= (90)::numeric))),
     CONSTRAINT patient_respiratory_metrics_pao2_check CHECK (((pao2 >= (40)::numeric) AND (pao2 <= (110)::numeric))),
     CONSTRAINT patient_respiratory_metrics_pef_check CHECK (((pef >= (50)::numeric) AND (pef <= (800)::numeric))),
@@ -549,15 +569,15 @@ CREATE TABLE public.patient_t2d_metrics (
     daily_carbs numeric(5,1) NOT NULL,
     sedentary_duration numeric(4,1) NOT NULL,
     recorded_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT patient_t2d_metrics_acanthosis_nigricans_check CHECK ((acanthosis_nigricans = ANY (ARRAY[0, 1]))),
+    CONSTRAINT patient_t2d_metrics_acanthosis_nigricans_check CHECK (((acanthosis_nigricans >= 0) AND (acanthosis_nigricans <= 1))),
     CONSTRAINT patient_t2d_metrics_bmi_check CHECK (((bmi >= 12.0) AND (bmi <= 60.0))),
     CONSTRAINT patient_t2d_metrics_c_peptide_check CHECK (((c_peptide >= 0.1) AND (c_peptide <= 12.0))),
     CONSTRAINT patient_t2d_metrics_daily_carbs_check CHECK (((daily_carbs >= (50)::numeric) AND (daily_carbs <= (600)::numeric))),
     CONSTRAINT patient_t2d_metrics_dbp_check CHECK (((dbp >= (40)::numeric) AND (dbp <= (130)::numeric))),
-    CONSTRAINT patient_t2d_metrics_family_history_diabetes_check CHECK ((family_history_diabetes = ANY (ARRAY[0, 1]))),
+    CONSTRAINT patient_t2d_metrics_family_history_diabetes_check CHECK (((family_history_diabetes >= 0) AND (family_history_diabetes <= 1))),
     CONSTRAINT patient_t2d_metrics_fasting_insulin_check CHECK (((fasting_insulin >= 1.0) AND (fasting_insulin <= 100.0))),
     CONSTRAINT patient_t2d_metrics_fpg_check CHECK (((fpg >= (50)::numeric) AND (fpg <= (450)::numeric))),
-    CONSTRAINT patient_t2d_metrics_gestational_diabetes_check CHECK ((gestational_diabetes = ANY (ARRAY[0, 1]))),
+    CONSTRAINT patient_t2d_metrics_gestational_diabetes_check CHECK (((gestational_diabetes >= 0) AND (gestational_diabetes <= 1))),
     CONSTRAINT patient_t2d_metrics_hba1c_check CHECK (((hba1c >= 4.0) AND (hba1c <= 15.0))),
     CONSTRAINT patient_t2d_metrics_hdl_check CHECK (((hdl >= (15)::numeric) AND (hdl <= (120)::numeric))),
     CONSTRAINT patient_t2d_metrics_homa_ir_check CHECK (((homa_ir >= 0.2) AND (homa_ir <= 25.0))),
@@ -568,7 +588,7 @@ CREATE TABLE public.patient_t2d_metrics (
     CONSTRAINT patient_t2d_metrics_triglycerides_check CHECK (((triglycerides >= (40)::numeric) AND (triglycerides <= (1000)::numeric))),
     CONSTRAINT patient_t2d_metrics_uacr_check CHECK (((uacr >= (1)::numeric) AND (uacr <= (3500)::numeric))),
     CONSTRAINT patient_t2d_metrics_waist_circumference_check CHECK (((waist_circumference >= (50)::numeric) AND (waist_circumference <= (160)::numeric))),
-    CONSTRAINT patient_t2d_metrics_whr_check CHECK (((whr >= 0.60) AND (whr <= 1.40)))
+    CONSTRAINT patient_t2d_metrics_whr_check CHECK (((whr >= 0.6) AND (whr <= 1.4)))
 );
 
 
@@ -1146,5 +1166,5 @@ ALTER TABLE ONLY public.patients
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Du0Jq8tHC6J9K5DU0dehbgm3xlrZv8YC1NgkUVm5gA6rkTP8V3nIVCA1UshU8A7
+\unrestrict tMXzQSqEFubsRtTYquKr8ZxEbINybHIQKradCMkZ4sBf4tGu7Ozmmybxqumu9Ov
 
