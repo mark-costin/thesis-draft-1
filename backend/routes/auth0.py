@@ -1,4 +1,3 @@
-import os
 import datetime
 import jwt
 from flask import Blueprint, request, jsonify
@@ -14,11 +13,9 @@ from backend.model_orm.adm_orm import Admin
 # Import Middleware
 from backend.middleware.sanitizer import sanitize_response
 from backend.middleware.rbac import role_required
+from backend.config import JWT_SECRET, JWT_ALGORITHM
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
-
-JWT_SECRET = os.environ.get("JWT_SECRET", "clinical-platform-default-jwt-secret-key")
-JWT_ALGORITHM = "HS256"
 
 @auth_bp.route('/register', methods=['POST'])
 def register_patient():

@@ -8,7 +8,9 @@ from backend.middleware.rbac import role_required
 from backend.middleware.idempotency import enforce_idempotency
 from backend.middleware.sanitizer import sanitize_response
 
-admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
+#admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
+
+admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 
 @admin_bp.route('/directory', methods=['GET'])
 @role_required(['ADMIN', 'SYSTEM_ADMIN'])

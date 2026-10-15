@@ -1,4 +1,5 @@
-from flask import Flask
+from backend.config import CORS_ALLOWED_ORIGIN
+
 
 def apply_security_headers(response):
     """
@@ -8,14 +9,16 @@ def apply_security_headers(response):
     # 1. Strict Security Headers (Baseline Defense)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    # The legacy XSS auditor is removed from modern browsers and could itself be abused;
+    # "0" explicitly turns it off, as OWASP recommends. CSP below is the real protection.
+    response.headers["X-XSS-Protection"] = "0"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Content-Security-Policy"] = "default-src 'self'"
 
-    # 2. CORS Headers (Streamlit Frontend -> Flask API Communication)
-    response.headers["Access-Control-Allow-Origin"] = "*"  # Update to specific frontend domain/port in production
+    # 2. CORS Headers — origin set by CORS_ALLOWED_ORIGIN in .env (default "*")
+    response.headers["Access-Control-Allow-Origin"] = CORS_ALLOWED_ORIGIN
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-    
+
     # 3. Middleware Integration: Explicitly whitelist headers required by rbac.py and idempotency.py
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Idempotency-Key, X-Idempotency-Key"
 

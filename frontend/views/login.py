@@ -1,6 +1,7 @@
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import docpage_api
+from frontend.test.password_reset import validate_identifier, validate_reset_form, request_succeeded
 import datetime
 import re
 import base64
@@ -122,6 +123,55 @@ def is_valid_gmail(text: str) -> bool:
     return bool(re.match(r"^[a-zA-Z0-9._%+-]+@gmail\.com$", text.strip()))
 
 # ==============================================================================
+# FORGOT PASSWORD DIALOG (2 steps: request code -> enter code + new password)
+# ==============================================================================
+_FP_KEYS = ["fp_step", "fp_identifier", "fp_ident", "fp_otp", "fp_new", "fp_confirm"]
+
+@st.dialog("Reset your password")
+def forgot_password_dialog():
+    step = st.session_state.get("fp_step", 1)
+
+    if step == 1:
+        ident = st.text_input("Username or registered email", key="fp_ident")
+        if st.button("Send reset code", type="primary", use_container_width=True, key="fp_send_btn"):
+            err = validate_identifier(ident)
+            if err:
+                st.error(err)
+            else:
+                resp = docpage_api.request_password_reset(ident.strip())
+                # Only advance if the backend actually answered; otherwise the user
+                # would be told a code was sent when nothing happened.
+                if request_succeeded(resp):
+                    st.session_state.fp_identifier = ident.strip()
+                    st.session_state.fp_step = 2
+                    st.rerun(scope="fragment")
+                else:
+                    st.error("Could not send a reset code right now. Please try again later.")
+    else:
+        st.info("If an account matches, a 6-digit code was sent to its registered email. It expires in 10 minutes.")
+        otp = st.text_input("Reset code", max_chars=6, key="fp_otp")
+        new_pw = st.text_input("New password", type="password", key="fp_new")
+        confirm_pw = st.text_input("Confirm new password", type="password", key="fp_confirm")
+
+        c1, c2 = st.columns(2)
+        if c1.button("Back", use_container_width=True, key="fp_back_btn"):
+            st.session_state.fp_step = 1
+            st.rerun(scope="fragment")
+        if c2.button("Reset password", type="primary", use_container_width=True, key="fp_reset_btn"):
+            err = validate_reset_form(otp, new_pw, confirm_pw)
+            if err:
+                st.error(err)
+            else:
+                resp = docpage_api.reset_password(st.session_state.fp_identifier, otp.strip(), new_pw)
+                if request_succeeded(resp):
+                    for k in _FP_KEYS:
+                        st.session_state.pop(k, None)
+                    st.session_state.fp_done = True
+                    st.rerun()  # full rerun closes the dialog
+                else:
+                    st.error((resp or {}).get("error", "Invalid or expired code."))
+
+# ==============================================================================
 # MAIN APP LAYOUT (20 | 60 | 20)
 # ==============================================================================
 _, col_main, _ = st.columns([20, 60, 20])
@@ -214,6 +264,16 @@ with col_main:
                                 
                         except requests.exceptions.RequestException:
                             st.error("Backend offline: Ensure Flask API is running on http://localhost:5000.")
+
+                # --- Forgot password entry point ---
+                _, col_fp, _ = st.columns([1, 2, 1])
+                if col_fp.button("Forgot password?", use_container_width=True, key="forgot_pw_btn"):
+                    for k in _FP_KEYS:  # start fresh each time the dialog is opened
+                        st.session_state.pop(k, None)
+                    forgot_password_dialog()
+
+                if st.session_state.pop("fp_done", False):
+                    st.success("✅ Password reset. You can now log in with your new password.")
 
         # ----------------------------------------------------------------------
         # TAB 2: PATIENT REGISTRATION

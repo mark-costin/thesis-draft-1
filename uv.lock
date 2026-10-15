@@ -2294,6 +2294,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyjwt"
+version = "2.15.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/ea/5194e52748b0da83d71e082d75496eaec6e58f419f5e184786ded517e6a9/pyjwt-2.15.1.tar.gz", hash = "sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8", size = 121252, upload-time = "2026-09-28T18:40:42.598Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/50/ca/44de4e75f8aadc457f0634be3b542815078ded46dca30efb960edeecad6e/pyjwt-2.15.1-py3-none-any.whl", hash = "sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193", size = 33860, upload-time = "2026-09-28T18:40:41.429Z" },
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.3.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2886,11 +2895,14 @@ dependencies = [
     { name = "matplotlib" },
     { name = "missingno" },
     { name = "mlflow" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
     { name = "optuna" },
     { name = "pgvector" },
     { name = "pingouin" },
     { name = "plotly" },
     { name = "psycopg2-binary" },
+    { name = "pyjwt" },
     { name = "python-dotenv" },
     { name = "scikit-learn" },
     { name = "scipy" },
@@ -2917,11 +2929,13 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.11.2" },
     { name = "missingno", specifier = ">=0.5.2" },
     { name = "mlflow", specifier = ">=3.17.1" },
+    { name = "numpy", specifier = ">=2.3.5" },
     { name = "optuna", specifier = ">=5.0.0" },
     { name = "pgvector", specifier = ">=0.5.0" },
     { name = "pingouin", specifier = ">=0.7.0" },
     { name = "plotly", specifier = ">=7.0.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.12" },
+    { name = "pyjwt", specifier = ">=2.15.1" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "scikit-learn", specifier = ">=1.9.1" },
     { name = "scipy", specifier = ">=1.18.1" },

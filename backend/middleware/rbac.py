@@ -1,70 +1,66 @@
-import os
 from functools import wraps
-from flask import request, jsonify
-import jwt
 
-# Configuration fallback for JWT Secret Key
-JWT_SECRET = os.environ.get("JWT_SECRET", "clinical-platform-default-jwt-secret-key")
-JWT_ALGORITHM = "HS256"
+import jwt
+from flask import jsonify, request
+
+from backend.config import JWT_ALGORITHM, JWT_SECRET
+
+
+def _error(status_code, code, message):
+    return jsonify({"status": "error", "code": code, "error": message, "retryable": False}), status_code
+
+
+def load_user(user_id):
+    """Fetch the account row for a token. Imported lazily so this module has no import-time DB dependency."""
+    from backend.dbconnect import db
+    from backend.model_orm.usr_orm import User
+    return db.session.get(User, user_id)
+
 
 def role_required(allowed_roles):
     """
     Flask decorator to enforce role-based access control (RBAC) via JWT Bearer tokens.
-    
+
+    On every request it re-checks the account in the database, so that:
+      - logout / password change (token_version bump) revoke old tokens immediately,
+      - locked or deleted accounts lose access immediately,
+      - a role change in the database applies immediately (the token's role is not trusted).
+
     Args:
-        allowed_roles (list or str): List of roles permitted to access the endpoint.
-        
+        allowed_roles (list or str): Roles permitted to access the endpoint.
+
     Returns:
-        JSON response with HTTP 401 (Unauthorized) or HTTP 403 (Forbidden) on failure.
+        HTTP 401 (not authenticated / session invalid) or 403 (role not allowed) on failure.
     """
     if isinstance(allowed_roles, str):
         allowed_roles = [allowed_roles]
+    allowed = set(allowed_roles)
 
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            auth_header = request.headers.get("Authorization")
-            
-            # Check for missing or malformed Authorization header
-            if not auth_header or not auth_header.startswith("Bearer "):
-                return jsonify({
-            "status": "error",
-            "code": "UNAUTHORIZED",
-            "error": "Missing or invalid authorization token.",
-            "retryable": False
-        }), 401
-            
-            token = auth_header.split(" ")[1]
-            
-            # Development bypass for terminal contract validation
-            if token == "dev-test-token":
-                payload = {
-                    "user_id": 1,
-                    "doctor_id": 1,
-                    "role": allowed_roles[0] if allowed_roles else "DOCTOR",
-                    "prc": "PRC-123456",
-                    "email": "doctor@lucernamedica.com"
-                }
-            else:
-                try:
-                    # Decode and verify the JWT signature and expiration
-                    payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-                except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
-                    return jsonify({
-            "status": "error",
-            "code": "UNAUTHORIZED",
-            "error": "Missing or invalid authorization token.",
-            "retryable": False
-        }), 401
-            
-            # Extract and validate role permissions
-            user_role = payload.get("role")
-            if not user_role or user_role not in allowed_roles:
-                return jsonify({"error": "Forbidden"}), 403
-            
-            # Attach claims to request context
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                return _error(401, "UNAUTHORIZED", "Missing or invalid authorization token.")
+
+            token = auth_header[len("Bearer "):].strip()
+            try:
+                payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            except jwt.InvalidTokenError:  # includes ExpiredSignatureError
+                return _error(401, "UNAUTHORIZED", "Missing or invalid authorization token.")
+
+            user_id = payload.get("user_id")
+            user = load_user(user_id) if user_id is not None else None
+            if user is None or user.is_locked or payload.get("token_version") != user.token_version:
+                return _error(401, "UNAUTHORIZED", "Session is no longer valid. Please log in again.")
+
+            if user.role not in allowed:
+                return _error(403, "FORBIDDEN", "Your role is not allowed to access this resource.")
+
+            payload["role"] = user.role  # database is the source of truth
             request.current_user = payload
-            
             return f(*args, **kwargs)
+
         return decorated_function
+
     return decorator

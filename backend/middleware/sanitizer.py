@@ -1,28 +1,31 @@
 from typing import Any, Dict, List, Union
 
 SENSITIVE_FIELDS = {
-    "password_hash", 
-    "password", 
-    "secret_key", 
-    "token", 
+    "password_hash",
+    "password",
+    "secret_key",
+    "token",
     "reset_token"
 }
 
-# Internal metrics restricted from patient visibility
+# Model internals hidden from patients. These are the keys the CDSS actually returns
+# (see routes/predictions.py). SHAP drivers and the risk tier stay visible.
+# Review this list when you decide what the patient portal should show.
 PATIENT_RESTRICTED_FIELDS = {
-    "ai_confidence_score",
     "model_version",
-    "internal_risk_weight"
+    "fairness",
+    "fairness_audit",
+    "calibration",
 }
+
 
 def sanitize_response(data: Union[Dict[str, Any], List[Dict[str, Any]], Any], role: str = None) -> Any:
     """
     Recursively strips internal/sensitive database attributes before returning JSON payloads.
-    Strips out diagnostic metrics (e.g., ai_confidence_score, model_version, internal_risk_weight)
-    if the requesting user role is 'PATIENT'.
+    Also strips model internals (PATIENT_RESTRICTED_FIELDS) if the requesting role is 'PATIENT'.
     """
     restricted_fields = SENSITIVE_FIELDS.copy()
-    
+
     if role and role.upper() == "PATIENT":
         restricted_fields.update(PATIENT_RESTRICTED_FIELDS)
 
@@ -35,5 +38,5 @@ def sanitize_response(data: Union[Dict[str, Any], List[Dict[str, Any]], Any], ro
         return sanitized
     elif isinstance(data, list):
         return [sanitize_response(item, role) for item in data]
-        
+
     return data

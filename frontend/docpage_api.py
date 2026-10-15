@@ -161,3 +161,16 @@ def perform_backend_logout():
     """POST /api/v1/auth/logout"""
     url = f"{BASE_URL}/auth/logout"
     return _safe_request("POST", url, headers=_get_standard_headers(), timeout=5)
+
+def request_password_reset(identifier: str):
+    """POST /api/v1/auth/forgot-password"""
+    url = f"{BASE_URL}/auth/forgot-password"
+    return _safe_request("POST", url, json={"identifier": identifier},
+                         headers={"Content-Type": "application/json"}, timeout=10)
+
+def reset_password(identifier: str, otp: str, new_password: str):
+    """POST /api/v1/auth/reset-password"""
+    url = f"{BASE_URL}/auth/reset-password"
+    payload = {"identifier": identifier, "otp": otp, "new_password": new_password}
+    return _safe_request("POST", url, json=payload,
+                         headers={"Content-Type": "application/json"}, timeout=10)

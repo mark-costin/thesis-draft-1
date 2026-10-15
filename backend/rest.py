@@ -8,28 +8,33 @@ from backend.routes.predictions import predictions_bp
 from backend.routes.doctor import doctor_bp
 from backend.routes.auth0 import auth_bp
 from backend.routes.patient import patient_bp
+from backend.routes.admin import admin_bp
+from backend.routes.health import health_bp
 from backend.middleware.security import apply_security_headers
 
 # Load environment configuration
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+# 1. Create the app FIRST
 app = Flask(__name__)
 
-# Bind database and connection pooling to this specific Flask app
+# 2. Bind database and connection pooling to this app
 init_db(app)
 
-# Apply global HTTP security and CORS headers
+# 3. Apply global HTTP security and CORS headers
 app.after_request(apply_security_headers)
 
-# Register versioned API blueprints
+# 4. Register API blueprints (only after app exists)
 app.register_blueprint(predictions_bp)
 app.register_blueprint(doctor_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(patient_bp)
+app.register_blueprint(admin_bp)
+app.register_blueprint(health_bp)
 
+# 5. Create tables
 with app.app_context():
-    # Import ORM models to register tables with SQLAlchemy metadata
     import backend.model_orm.clinic_orm  # noqa: F401
     db.create_all()
 

@@ -1,124 +1,139 @@
-"""Load the trained disease heads saved by experiment/src/ml/train.py.
-
-Each `{disease}_head_latest.joblib` is a bundle (dict) with the calibrated model, the raw XGBoost,
-the conformal thresholds, the tier cut-offs and the feature list. A bundle is used only if its
-SHA-256 matches `artifact_sha256` in the matching `.json` record; otherwise the head falls back to
-the deterministic stub and says why.
-
-Model folder: $CDSS_MODEL_DIR if set, else <project root>/experiment/data/models.
-"""
-
-from __future__ import annotations
-
 import hashlib
 import json
-import os
-from dataclasses import dataclass, field
+import logging
+import platform
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 import joblib
 
 from backend.cdss.stub import DeterministicStub
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+log = logging.getLogger(__name__)
+
+# Look for models in ml/models (or experiments/models as fallback)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+MODEL_DIR = BASE_DIR / "ml" / "models"
+if not MODEL_DIR.exists():
+    MODEL_DIR = BASE_DIR / "experiments" / "models"
+
 DISEASES = ["cvd", "t2d", "resp", "neuro"]
-DEFAULT_TIER_CUTOFFS = [0.20, 0.50]
 
+# metadata "library_versions" key -> installed distribution name
+_DISTRIBUTIONS = {"sklearn": "scikit-learn", "xgboost": "xgboost", "numpy": "numpy", "joblib": "joblib"}
 
-def resolve_model_dir() -> Path:
-    env = os.environ.get("CDSS_MODEL_DIR")
-    return Path(env) if env else PROJECT_ROOT / "experiment" / "data" / "models"
+_STUB_METADATA = {
+    "loaded": False,
+    "fallback": "deterministic_stub",
+    "model_version": "stub-fallback",
+    "feature_columns": [],
+}
 
 
 def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-@dataclass
-class LoadedHead:
-    """What the engine needs for one disease. `source` is "model" or "stub"."""
-    disease: str
-    source: str
-    calibrated: object
-    raw: object = None
-    q_hat: dict | None = None
-    tier_cutoffs: list = field(default_factory=lambda: list(DEFAULT_TIER_CUTOFFS))
-    feature_columns: list = field(default_factory=list)
-    velocity_markers: list = field(default_factory=list)
-    model_version: str = "stub-fallback"
-    reason: str | None = None
+def _major_minor(version: str) -> tuple:
+    return tuple(str(version).split(".")[:2])
+
+
+def check_library_versions(trained: dict) -> list:
+    """Compare major.minor of training libraries with this server. Returns warnings."""
+    warnings = []
+    for key, trained_version in (trained or {}).items():
+        if key == "python":
+            installed = platform.python_version()
+        elif key in _DISTRIBUTIONS:
+            try:
+                installed = importlib_metadata.version(_DISTRIBUTIONS[key])
+            except importlib_metadata.PackageNotFoundError:
+                warnings.append(f"{key}: trained with {trained_version}, not installed on this server")
+                continue
+        else:
+            continue  # training-only tools (pandas, optuna) do not affect loading
+        if _major_minor(installed) != _major_minor(trained_version):
+            warnings.append(f"{key}: trained with {trained_version}, server has {installed}")
+    return warnings
 
 
 class ModelRegistry:
-    """Loads and caches verified bundles; falls back to DeterministicStub with a reason."""
+    """
+    Loads trained artifacts and their metadata, with caching.
 
-    def __init__(self, model_dir: Path | str | None = None):
-        self.model_dir = Path(model_dir) if model_dir else resolve_model_dir()
-        self._cache: dict[str, LoadedHead] = {}
+    Before loading a .joblib file it checks the file's SHA-256 against `artifact_sha256`
+    in the metadata. joblib files can run code when loaded, so a changed file is refused
+    and the stub is used instead (visible in status()).
+    """
 
-    def _stub(self, disease: str, reason: str) -> LoadedHead:
-        return LoadedHead(disease=disease, source="stub", calibrated=DeterministicStub(disease), reason=reason)
+    def __init__(self, model_dir=None):
+        self.model_dir = Path(model_dir) if model_dir is not None else MODEL_DIR
+        self._models = {}
+        self._metadata = {}
+        self._problems = {}
+        self._version_warnings = {}
 
-    def load(self, disease: str, version: str = "latest") -> LoadedHead:
-        key = f"{disease}_{version}"
-        if key in self._cache:
-            return self._cache[key]
-
-        path = self.model_dir / f"{disease}_head_{version}.joblib"
-        record_path = path.with_suffix(".json")
-        if not path.exists() or not record_path.exists():
-            head = self._stub(disease, f"model file not found: {path}")
-        else:
-            record = json.loads(record_path.read_text())
-            expected = record.get("artifact_sha256")
-            if expected != _sha256(path):
-                head = self._stub(disease, f"sha256 mismatch for {path.name}: file does not match its record")
-            else:
-                try:
-                    b = joblib.load(path)
-                    head = LoadedHead(
-                        disease=disease, source="model", calibrated=b["calibrated"], raw=b["raw"],
-                        q_hat=b["q_hat"], tier_cutoffs=list(b["tier_cutoffs"]),
-                        feature_columns=list(b["feature_columns"]),
-                        velocity_markers=list(b.get("velocity_markers", [])),
-                        model_version=b.get("model_version", record.get("model_version", "unknown")),
-                    )
-                except Exception as e:   # unpickling needs the same xgboost/sklearn versions
-                    head = self._stub(disease, f"could not load {path.name}: {type(e).__name__}: {e}")
-
-        self._cache[key] = head
-        return head
+    @staticmethod
+    def is_stub(model) -> bool:
+        return isinstance(model, DeterministicStub)
 
     def metadata(self, disease: str, version: str = "latest") -> dict:
-        path = self.model_dir / f"{disease}_head_{version}.json"
-        if path.exists():
-            return json.loads(path.read_text())
-        return {"loaded": False, "fallback": "deterministic_stub", "model_version": "stub-fallback",
-                "feature_columns": []}
+        key = f"{disease}_{version}"
+        if key not in self._metadata:
+            path = self.model_dir / f"{disease}_head_{version}.json"
+            self._metadata[key] = json.loads(path.read_text()) if path.exists() else dict(_STUB_METADATA)
+        return self._metadata[key]
+
+    def load(self, disease: str, version: str = "latest"):
+        key = f"{disease}_{version}"
+        if key in self._models:
+            return self._models[key]
+
+        meta = self.metadata(disease, version)
+        path = self.model_dir / f"{disease}_head_{version}.joblib"
+        problem = None
+
+        if not path.exists():
+            problem = f"model file missing: {path.name}"
+        else:
+            expected = meta.get("artifact_sha256")
+            if expected and _sha256(path) != expected:
+                problem = "artifact_sha256 mismatch: the .joblib file changed after training"
+
+        if problem:
+            log.warning("CDSS %s: %s; using deterministic stub", disease, problem)
+            model = DeterministicStub(disease)
+        else:
+            warnings = check_library_versions(meta.get("library_versions"))
+            for w in warnings:
+                log.warning("CDSS %s: library version mismatch: %s", disease, w)
+            self._version_warnings[key] = warnings
+            model = joblib.load(path)
+
+        self._problems[key] = problem
+        self._models[key] = model
+        return model
 
     def status(self) -> dict:
-        out = {}
+        report = {}
         for d in DISEASES:
-            head = self.load(d)
-            out[d] = {"loaded": head.source == "model", "source": head.source,
-                      "model_version": head.model_version, "reason": head.reason,
-                      "metadata": self.metadata(d)}
-        return out
+            key = f"{d}_latest"
+            model = self.load(d)
+            report[d] = {
+                "loaded": not self.is_stub(model),
+                "model_version": self.metadata(d).get("model_version"),
+                "problem": self._problems.get(key),
+                "version_warnings": self._version_warnings.get(key, []),
+                "metadata": self.metadata(d),
+            }
+        return report
 
     def clear_cache(self):
-        self._cache.clear()
-
-
-_REGISTRY: ModelRegistry | None = None
-
-
-def get_registry() -> ModelRegistry:
-    """The one registry shared by inference and /models/reload."""
-    global _REGISTRY
-    if _REGISTRY is None:
-        _REGISTRY = ModelRegistry()
-    return _REGISTRY
+        self._models.clear()
+        self._metadata.clear()
+        self._problems.clear()
+        self._version_warnings.clear()
