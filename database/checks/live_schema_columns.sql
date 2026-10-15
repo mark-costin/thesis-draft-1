@@ -1,6 +1,6 @@
 -- Live schema check (columns): compares the PostgreSQL tables with the backend models.
 -- Read-only. Run in DBeaver with Ctrl+Enter or Alt+X. Expected columns generated from
--- backend/model_orm/*.py after AI <-> database part 2 (2026-10-15). 211 columns.
+-- backend/model_orm/*.py after batch 5b (2026-10-15). 230 columns.
 --
 -- One row per difference. No rows = the database matches the models.
 --   MISSING COLUMN / TYPE DIFFERS  -> problem: the code expects something the database lacks
@@ -56,6 +56,25 @@ WITH expected(table_name, column_name, data_type) AS (VALUES
     ('patient_environmental_hazards', 'disease_domain', 'character varying'),
     ('patient_environmental_hazards', 'hazard_code', 'character varying'),
     ('patient_environmental_hazards', 'recorded_at', 'timestamp with time zone'),
+    ('queue_tickets', 'id', 'integer'),
+    ('queue_tickets', 'queue_date', 'date'),
+    ('queue_tickets', 'queue_number', 'integer'),
+    ('queue_tickets', 'patient_id', 'integer'),
+    ('queue_tickets', 'name', 'character varying'),
+    ('queue_tickets', 'urgency', 'character varying'),
+    ('queue_tickets', 'complaint', 'text'),
+    ('queue_tickets', 'vitals', 'character varying'),
+    ('queue_tickets', 'watch_flag', 'character varying'),
+    ('queue_tickets', 'status', 'character varying'),
+    ('queue_tickets', 'checked_in_at', 'timestamp with time zone'),
+    ('queue_tickets', 'closed_at', 'timestamp with time zone'),
+    ('consultations', 'id', 'integer'),
+    ('consultations', 'consultation_uid', 'character varying'),
+    ('consultations', 'patient_id', 'integer'),
+    ('consultations', 'doctor_id', 'integer'),
+    ('consultations', 'directives', 'json'),
+    ('consultations', 'notes', 'text'),
+    ('consultations', 'created_at', 'timestamp with time zone'),
     ('patient_fhrs_stratification', 'fhrs_id', 'integer'),
     ('patient_fhrs_stratification', 'patient_id', 'integer'),
     ('patient_fhrs_stratification', 'disease_domain', 'character varying'),

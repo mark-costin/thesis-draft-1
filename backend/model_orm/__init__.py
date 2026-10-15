@@ -15,6 +15,8 @@ from .clinic_orm import (
     RespiratoryMetrics,
     NeuroMentalMetrics,
     Encounter,
+    QueueTicket,
+    Consultation,
 )
 from .clinical_vector import ClinicalVector
 from .audit_orm import AuditLedger
@@ -34,6 +36,8 @@ __all__ = [
     "RespiratoryMetrics",
     "NeuroMentalMetrics",
     "Encounter",
+    "QueueTicket",
+    "Consultation",
     "ClinicalVector",
     "AuditLedger",
 ]

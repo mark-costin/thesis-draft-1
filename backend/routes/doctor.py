@@ -5,7 +5,9 @@ from flask import Blueprint, request, jsonify
 from backend.dbconnect import db
 from backend.model_orm.pat_orm import Patient
 from backend.model_orm.doc_orm import Doctor
-from backend.model_orm.clinic_orm import Encounter
+from backend.model_orm.clinic_orm import Consultation, Encounter
+from backend.triage_queue import TriageQueue
+from backend.validation import ValidationError, validate_consultation
 from backend.ledger import SEAL_ALGORITHM, canonical_timestamp, seal, verify_encounter
 from backend.audit import log_event
 
@@ -21,6 +23,9 @@ doctor_bp = Blueprint('doctor', __name__, url_prefix='/api/v1/doctor')
 # Encounter record types. An anchor starts or restarts a patient's chain.
 RECORD_TYPES = {"BASELINE", "FOLLOWUP", "REANCHOR_BASELINE"}
 ANCHOR_TYPES = ("BASELINE", "REANCHOR_BASELINE")
+
+# The clinic queue (stored in queue_tickets, so every worker sees the same queue).
+QUEUE = TriageQueue()
 
 
 def _error(status_code, code, message, retryable=False, **extra):
@@ -39,13 +44,9 @@ def _latest_anchor(patient_id):
 @doctor_bp.route('/queue', methods=['GET'])
 @role_required(['DOCTOR', 'ADMIN'])
 def get_triage_queue():
-    """Fetches the active patient triage queue."""
-    mock_queue = [
-        {"queue_no": "Q-01", "patient_id": 1, "urgency": "High", "status": "Waiting"},
-        {"queue_no": "Q-02", "patient_id": 2, "urgency": "Routine", "status": "Waiting"}
-    ]
+    """Today's waiting patients, in check-in order (the same tickets patients create)."""
     user_role = request.current_user.get("role")
-    return jsonify(sanitize_response(mock_queue, role=user_role)), 200
+    return jsonify({"status": "success", "queue": sanitize_response(QUEUE.list_for(user_role), role=user_role)}), 200
 
 
 @doctor_bp.route('/patient/<int:patient_id>', methods=['GET'])
@@ -123,26 +124,64 @@ def get_patient_baseline(patient_id):
 @role_required(['DOCTOR'])
 @enforce_idempotency
 def submit_consultation():
-    """Saves clinical directives and prescription orders."""
-    data = request.get_json()
-    patient_id = data.get("patient_id")
-    directives = data.get("directives")
-    
-    if not patient_id or not directives:
-        return jsonify({"error": "patient_id and directives are required"}), 400
+    """
+    Saves a consultation (directives and notes) for a patient, by the logged-in doctor.
+    Closes the patient's waiting queue ticket and writes a sealed audit entry, all in one
+    transaction. Body: {"patient_id": 5, "directives": {...} | [...] | "text", "notes": "..."}
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        consultation = validate_consultation(data)
+    except ValidationError as exc:
+        return _error(400, "VALIDATION_FAILED", str(exc), fields=exc.fields)
 
-    patient = db.session.get(Patient, patient_id)
-    if not patient:
-        return jsonify({"error": "Target patient not found"}), 404
+    doctor = Doctor.query.filter_by(user_id=request.current_user.get("user_id")).first()
+    if doctor is None:
+        return _error(403, "DOCTOR_PROFILE_MISSING", "This account has no doctor profile.")
+    patient_id = consultation["patient_id"]
+    if db.session.get(Patient, patient_id) is None:
+        return _error(404, "PATIENT_NOT_FOUND", f"Target patient ID {patient_id} not found in database.")
 
-    response_payload = {
-        "message": "Consultation directives and notes recorded successfully",
-        "encounter_status": "Complete",
-        "directives_applied": directives
-    }
-    
-    user_role = request.current_user.get("role")
-    return jsonify(sanitize_response(response_payload, role=user_role)), 201
+    row = Consultation(consultation_uid=f"CONS-{uuid.uuid4().hex[:12].upper()}", patient_id=patient_id,
+                       doctor_id=doctor.doctor_id, directives=consultation["directives"],
+                       notes=consultation["notes"], created_at=datetime.now(timezone.utc))
+    db.session.add(row)
+    ticket_closed = QUEUE.close_for_patient(patient_id)
+    try:
+        log_event("CONSULTATION_SAVED",
+                  {"consultation_uid": row.consultation_uid, "directives": row.directives, "notes": row.notes,
+                   "queue_ticket_closed": ticket_closed},
+                  patient_id=patient_id, doctor_id=doctor.doctor_id,
+                  actor_user_id=request.current_user.get("user_id"), commit=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        log.exception("Saving consultation failed for patient %s", patient_id)
+        return _error(500, "CONSULTATION_SAVE_FAILED", "The consultation could not be saved. Please retry.",
+                      retryable=True)
+
+    return jsonify({
+        "status": "success",
+        "message": "Consultation saved.",
+        "consultation_uid": row.consultation_uid,
+        "patient_id": patient_id,
+        "doctor_id": doctor.doctor_id,
+        "queue_ticket_closed": ticket_closed,
+    }), 201
+
+
+@doctor_bp.route('/patient/<int:patient_id>/consultations', methods=['GET'])
+@role_required(['DOCTOR', 'ADMIN'])
+def list_consultations(patient_id):
+    """A patient's saved consultations, newest first."""
+    if db.session.get(Patient, patient_id) is None:
+        return _error(404, "PATIENT_NOT_FOUND", f"Target patient ID {patient_id} not found in database.")
+    rows = (Consultation.query.filter_by(patient_id=patient_id)
+            .order_by(Consultation.created_at.desc(), Consultation.id.desc()).all())
+    return jsonify({"status": "success", "patient_id": patient_id, "consultations": [
+        {"consultation_uid": r.consultation_uid, "doctor_id": r.doctor_id, "directives": r.directives,
+         "notes": r.notes, "created_at": r.created_at.isoformat() if r.created_at else None}
+        for r in rows]}), 200
 
 
 @doctor_bp.route('/commit-encounter', methods=['POST'])

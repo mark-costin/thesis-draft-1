@@ -190,6 +190,40 @@ def validate_hazard(data):
     return disease, code
 
 
+CONSULTATION_NOTES_MAX = 5000
+
+
+def validate_consultation(data):
+    """
+    A doctor's consultation: patient_id, directives (a non-empty object, list or text) and
+    optional notes (text, at most 5000 characters). Every bad field is reported together.
+    """
+    bad, patient_id = [], None
+    try:
+        patient_id = parse_patient_id(data.get("patient_id"))
+    except ValidationError:
+        bad.append("patient_id")
+
+    directives = data.get("directives")
+    if isinstance(directives, str):
+        directives = directives.strip()
+    if not isinstance(directives, (str, dict, list)) or not directives:
+        bad.append("directives")
+
+    notes = data.get("notes")
+    if notes is not None:
+        if not isinstance(notes, str) or len(notes) > CONSULTATION_NOTES_MAX:
+            bad.append("notes")
+        else:
+            notes = notes.strip() or None
+
+    if bad:
+        raise ValidationError(
+            "Invalid or missing: " + ", ".join(bad) + ". directives must be a non-empty object, list or "
+            f"text; notes at most {CONSULTATION_NOTES_MAX} characters.", bad)
+    return {"patient_id": patient_id, "directives": directives, "notes": notes}
+
+
 def _numeric_limit(precision, scale):
     """Largest absolute value a Numeric(precision, scale) column can store."""
     scale = scale or 0

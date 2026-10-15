@@ -5,7 +5,6 @@ Needs: flask_sqlalchemy, bcrypt, pgvector (runs on your machine; skipped where m
 import os
 import unittest
 from datetime import date
-from unittest.mock import patch
 
 from tests._helpers import has_modules, make_token
 
@@ -44,16 +43,13 @@ class PatientPrivacyTests(unittest.TestCase):
 
     def setUp(self):
         from backend.model_orm import Doctor, FamilyHistory, IdempotencyCache, Patient, User
-        from backend.triage_queue import TriageQueue
-        import backend.routes.patient as patient_routes
+        from backend.model_orm.clinic_orm import QueueTicket
         self.FamilyHistory = FamilyHistory
-        self.queue_patch = patch.object(patient_routes, "QUEUE", TriageQueue())
-        self.queue_patch.start()
 
         self.ctx = self.app.app_context()
         self.ctx.push()
         s = self.db.session
-        for model in (FamilyHistory, IdempotencyCache, Patient, Doctor, User):
+        for model in (QueueTicket, FamilyHistory, IdempotencyCache, Patient, Doctor, User):
             s.query(model).delete()
         s.add_all([
             User(user_id=DOC_USER, username="doc", role="DOCTOR", password_hash="x"),
@@ -73,7 +69,6 @@ class PatientPrivacyTests(unittest.TestCase):
     def tearDown(self):
         self.db.session.rollback()
         self.ctx.pop()
-        self.queue_patch.stop()
 
     def h(self, user_id, role="PATIENT"):
         return {"Authorization": f"Bearer {make_token(user_id=user_id, role=role)}"}

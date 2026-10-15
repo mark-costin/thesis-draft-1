@@ -344,6 +344,8 @@ def submit_checkin():
         return err
     if not target_pid:
         return jsonify({"status": "error", "error": "Patient identification required"}), 400
+    if db.session.get(Patient, target_pid) is None:
+        return jsonify({"status": "error", "code": "PATIENT_NOT_FOUND", "error": "Patient not found."}), 404
 
     ticket, created = QUEUE.checkin(target_pid, data, by_staff=claims.get("role") != "PATIENT")
     if not created:

@@ -66,6 +66,45 @@ class EnvironmentalHazard(db.Model):
     recorded_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
 
 
+class QueueTicket(db.Model):
+    """
+    One clinic check-in. Numbers restart each day and never repeat within a day; cancelled
+    and finished tickets stay as history (status CANCELLED / DONE), so nothing is lost on a
+    server restart.
+    """
+    __tablename__ = 'queue_tickets'
+    __table_args__ = (
+        db.UniqueConstraint('queue_date', 'queue_number', name='queue_tickets_number_unique'),
+        db.CheckConstraint("status IN ('WAITING', 'DONE', 'CANCELLED')", name='queue_tickets_status_check'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    queue_date = db.Column(db.Date, nullable=False, index=True)
+    queue_number = db.Column(db.Integer, nullable=False)
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), nullable=False, index=True)
+    name = db.Column(db.String(150), nullable=False)
+    urgency = db.Column(db.String(40), nullable=False)
+    complaint = db.Column(db.Text, nullable=False)
+    vitals = db.Column(db.String(255), nullable=False)
+    watch_flag = db.Column(db.String(150), nullable=False)
+    status = db.Column(db.String(12), nullable=False, default='WAITING')
+    checked_in_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    closed_at = db.Column(db.DateTime(timezone=True))
+
+
+class Consultation(db.Model):
+    """Directives and notes a doctor records at a visit (previously not saved at all)."""
+    __tablename__ = 'consultations'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    consultation_uid = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), nullable=False, index=True)
+    doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.doctor_id'), nullable=False, index=True)
+    directives = db.Column(db.JSON, nullable=False)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False)
+
+
 class FHRSStratification(db.Model):
     __tablename__ = 'patient_fhrs_stratification'
     
