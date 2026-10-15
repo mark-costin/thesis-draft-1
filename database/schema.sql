@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict g43tQzx0SfHim4BpbdnUD0MaEPDZFrs5Uj2bAIz1cOpwN6nVxgNYYFxdSUy3Aj2
+\restrict Du0Jq8tHC6J9K5DU0dehbgm3xlrZv8YC1NgkUVm5gA6rkTP8V3nIVCA1UshU8A7
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -20,17 +20,17 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
+-- Name: vector; Type: EXTENSION; Schema: -; Owner: -
 --
 
-CREATE SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 
 --
--- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+-- Name: EXTENSION vector; Type: COMMENT; Schema: -; Owner: -
 --
 
-COMMENT ON SCHEMA public IS 'standard public schema';
+COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 
 
 SET default_tablespace = '';
@@ -91,11 +91,13 @@ ALTER SEQUENCE public.admins_admin_id_seq OWNED BY public.admins.admin_id;
 CREATE TABLE public.audit_ledger (
     id integer NOT NULL,
     audit_id character varying(64) NOT NULL,
-    timestamp_utc timestamp with time zone DEFAULT now() NOT NULL,
+    timestamp_utc timestamp with time zone NOT NULL,
     event_type character varying(64) NOT NULL,
-    payload jsonb NOT NULL,
-    patient_id character varying(64),
-    doctor_id character varying(64)
+    payload json NOT NULL,
+    patient_id integer,
+    doctor_id integer,
+    actor_user_id integer,
+    entry_seal character varying(64) NOT NULL
 );
 
 
@@ -798,14 +800,6 @@ ALTER TABLE ONLY public.admins
 
 
 --
--- Name: audit_ledger audit_ledger_audit_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.audit_ledger
-    ADD CONSTRAINT audit_ledger_audit_id_key UNIQUE (audit_id);
-
-
---
 -- Name: audit_ledger audit_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -990,10 +984,45 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: idx_audit_event; Type: INDEX; Schema: public; Owner: -
+-- Name: ix_audit_ledger_actor_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_audit_event ON public.audit_ledger USING btree (event_type);
+CREATE INDEX ix_audit_ledger_actor_user_id ON public.audit_ledger USING btree (actor_user_id);
+
+
+--
+-- Name: ix_audit_ledger_audit_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ix_audit_ledger_audit_id ON public.audit_ledger USING btree (audit_id);
+
+
+--
+-- Name: ix_audit_ledger_doctor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_audit_ledger_doctor_id ON public.audit_ledger USING btree (doctor_id);
+
+
+--
+-- Name: ix_audit_ledger_event_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_audit_ledger_event_type ON public.audit_ledger USING btree (event_type);
+
+
+--
+-- Name: ix_audit_ledger_patient_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_audit_ledger_patient_id ON public.audit_ledger USING btree (patient_id);
+
+
+--
+-- Name: ix_audit_ledger_timestamp_utc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_audit_ledger_timestamp_utc ON public.audit_ledger USING btree (timestamp_utc);
 
 
 --
@@ -1117,5 +1146,5 @@ ALTER TABLE ONLY public.patients
 -- PostgreSQL database dump complete
 --
 
-\unrestrict g43tQzx0SfHim4BpbdnUD0MaEPDZFrs5Uj2bAIz1cOpwN6nVxgNYYFxdSUy3Aj2
+\unrestrict Du0Jq8tHC6J9K5DU0dehbgm3xlrZv8YC1NgkUVm5gA6rkTP8V3nIVCA1UshU8A7
 
