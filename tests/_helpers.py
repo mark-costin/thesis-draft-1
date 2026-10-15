@@ -15,6 +15,8 @@ if str(ROOT) not in sys.path:
 TEST_SECRET = "unit-test-secret-" + "x" * 40
 os.environ.setdefault("JWT_SECRET", TEST_SECRET)
 os.environ.setdefault("CORS_ALLOWED_ORIGIN", "http://localhost:8501")
+TEST_SEAL_KEY = "unit-test-seal-key-" + "y" * 40
+os.environ.setdefault("ENCOUNTER_SEAL_KEY", TEST_SEAL_KEY)
 
 # Expected "using deterministic stub" warnings would otherwise print during tests.
 logging.getLogger("backend").addHandler(logging.NullHandler())

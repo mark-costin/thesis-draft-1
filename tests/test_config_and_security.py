@@ -11,7 +11,7 @@ from flask import Flask, make_response
 
 def _import_without_secret(module):
     """Import `module` in a fresh interpreter whose environment has no JWT_SECRET."""
-    env = {k: v for k, v in os.environ.items() if k != "JWT_SECRET"}
+    env = {**os.environ, "JWT_SECRET": ""}  # empty, so .env cannot refill it
     return subprocess.run(
         [sys.executable, "-c", f"import {module}"],
         cwd=str(ROOT), env=env, capture_output=True, text=True,

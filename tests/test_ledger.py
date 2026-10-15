@@ -99,7 +99,7 @@ class SealKeyTests(unittest.TestCase):
         self.assertNotEqual(seal(**fields()), plain)
 
     def test_server_refuses_to_start_without_seal_key(self):
-        env = {k: v for k, v in os.environ.items() if k != "ENCOUNTER_SEAL_KEY"}
+        env = {**os.environ, "ENCOUNTER_SEAL_KEY": ""}  # empty, so .env cannot refill it
         result = subprocess.run([sys.executable, "-c", "import backend.ledger"],
                                 cwd=str(ROOT), env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
