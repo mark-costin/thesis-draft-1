@@ -42,14 +42,23 @@ def canonical_envelope(*, encounter_uid, patient_id, doctor_id, record_type, par
         "care_plan": care_plan,
         "reanchor_decision": reanchor_decision,
     }
-    return json.dumps(envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return canonical_json(envelope)
+
+
+def canonical_json(value) -> str:
+    """Deterministic JSON: sorted keys, no whitespace."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+
+
+def hmac_hex(message: str, key: str = None) -> str:
+    """HMAC-SHA256 of `message` with the seal key, as 64 hex characters."""
+    secret = (key or ENCOUNTER_SEAL_KEY).encode("utf-8")
+    return hmac.new(secret, message.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def seal(*, key: str = None, **fields) -> str:
     """HMAC-SHA256 of the canonical envelope, as 64 hex characters."""
-    secret = (key or ENCOUNTER_SEAL_KEY).encode("utf-8")
-    message = canonical_envelope(**fields).encode("utf-8")
-    return hmac.new(secret, message, hashlib.sha256).hexdigest()
+    return hmac_hex(canonical_envelope(**fields), key=key)
 
 
 def verify_seal(expected, *, key: str = None, **fields) -> bool:

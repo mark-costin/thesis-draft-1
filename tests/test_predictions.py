@@ -19,9 +19,20 @@ class PredictionRouteTests(unittest.TestCase):
         self.dir = Path(self.tmp.name)
         self.reg = ModelRegistry(model_dir=self.dir)
         import backend.cdss.engine as engine
+        # Database calls are replaced here because SQLAlchemy is not available in every
+        # test environment; tests/test_ai_database.py runs the real ones.
+        self.audit_events = []
+        self.audit_fails = False
+        self.patient_found = True
+        self.stored_biomarkers = None
         self.patches = [
             patch.object(engine, "registry", self.reg, create=True),
             patch("backend.middleware.rbac.load_user", create=True, side_effect=self._user),
+            patch("backend.routes.predictions.patient_exists", create=True,
+                  side_effect=lambda pid: self.patient_found),
+            patch("backend.routes.predictions.latest_biomarkers", create=True,
+                  side_effect=lambda modality, pid: self.stored_biomarkers),
+            patch("backend.routes.predictions.log_event", create=True, side_effect=self._log_event),
         ]
         for p in self.patches:
             p.start()
@@ -38,6 +49,62 @@ class PredictionRouteTests(unittest.TestCase):
 
     def _user(self, user_id):
         return fake_user(user_id=user_id, role=self.role)
+
+    def _log_event(self, event_type, payload, **kwargs):
+        if self.audit_fails:
+            raise RuntimeError("database unavailable")
+        self.audit_events.append({"event_type": event_type, "payload": payload, **kwargs})
+        return f"audit-{len(self.audit_events)}"
+
+    # --- audit ledger -----------------------------------------------------
+    def test_every_inference_is_logged_with_its_result(self):
+        write_model(self.dir, model=FixedProbabilityModel(0.55))
+        body = self.infer().get_json()
+        self.assertEqual(len(self.audit_events), 1)
+        event = self.audit_events[0]
+        self.assertEqual(event["event_type"], "INFERENCE")
+        self.assertEqual(event["patient_id"], 7)
+        self.assertEqual(event["payload"]["tier"], "HIGH")
+        self.assertEqual(event["payload"]["model_version"], "v1")
+        self.assertEqual(body["audit_id"], "audit-1")
+
+    def test_inference_fails_closed_when_audit_cannot_be_written(self):
+        write_model(self.dir)
+        self.audit_fails = True
+        r = self.infer()
+        self.assertEqual(r.status_code, 500)
+        self.assertEqual(r.get_json()["code"], "AUDIT_LOG_FAILED")
+
+    def test_unknown_patient_is_404_and_not_logged(self):
+        write_model(self.dir)
+        self.patient_found = False
+        r = self.infer()
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.get_json()["code"], "PATIENT_NOT_FOUND")
+        self.assertEqual(self.audit_events, [])
+
+    def test_reload_is_logged(self):
+        self.role = "ADMIN"
+        self.client.post("/api/v1/predictions/models/reload", headers=auth_header(role="ADMIN"))
+        self.assertEqual([e["event_type"] for e in self.audit_events], ["MODELS_RELOADED"])
+
+    # --- biomarkers from the database ---------------------------------------
+    def test_without_payload_the_latest_stored_biomarkers_are_used(self):
+        write_model(self.dir)
+        self.stored_biomarkers = {"age": 50, "sbp": 130}
+        body = self.infer({"patient_id": 7, "modality": "cvd"}).get_json()
+        self.assertEqual(body["biomarker_source"], "database")
+        self.assertEqual(body["missing_features"], [])
+
+    def test_request_payload_is_reported_as_the_source(self):
+        write_model(self.dir)
+        self.assertEqual(self.infer().get_json()["biomarker_source"], "request")
+
+    def test_without_payload_or_stored_biomarkers_is_404(self):
+        write_model(self.dir)
+        r = self.infer({"patient_id": 7, "modality": "cvd"})
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.get_json()["code"], "NO_BIOMARKERS")
 
     def infer(self, body=PAYLOAD, role="DOCTOR"):
         self.role = role

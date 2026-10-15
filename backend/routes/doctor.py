@@ -7,6 +7,7 @@ from backend.model_orm.pat_orm import Patient
 from backend.model_orm.doc_orm import Doctor
 from backend.model_orm.clinic_orm import Encounter
 from backend.ledger import SEAL_ALGORITHM, canonical_timestamp, seal, verify_encounter
+from backend.audit import log_event
 
 # Import Security Middleware
 from backend.middleware.rbac import role_required
@@ -230,6 +231,16 @@ def commit_encounter_atomic():
             reanchor_decision=sealed_fields["reanchor_decision"],
             created_at_utc=created_at,
         ))
+        # Same transaction: the encounter and its audit entry are saved together or not at all.
+        log_event(
+            "ENCOUNTER_COMMITTED",
+            {"encounter_id": encounter_uid, "record_type": record_type,
+             "cryptographic_hash": crypto_hash, "parent_baseline_hash": parent_baseline_hash},
+            patient_id=patient_id,
+            doctor_id=doctor.doctor_id,
+            actor_user_id=request.current_user.get("user_id"),
+            commit=False,
+        )
         db.session.commit()
     except Exception:
         db.session.rollback()

@@ -14,3 +14,4 @@ mlruns/
 .env
 .env
 old_encounters_backup.json
+old_audit_ledger_backup.json

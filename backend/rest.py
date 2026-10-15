@@ -10,6 +10,7 @@ from backend.routes.auth0 import auth_bp
 from backend.routes.patient import patient_bp
 from backend.routes.admin import admin_bp
 from backend.routes.health import health_bp
+from backend.routes.biomarkers import biomarkers_bp
 from backend.middleware.security import apply_security_headers
 
 # Load environment configuration
@@ -32,10 +33,11 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(patient_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(health_bp)
+app.register_blueprint(biomarkers_bp)
 
-# 5. Create tables
+# 5. Create tables (importing the package registers every model, audit_ledger included)
 with app.app_context():
-    import backend.model_orm.clinic_orm  # noqa: F401
+    import backend.model_orm  # noqa: F401
     db.create_all()
 
 if __name__ == "__main__":

@@ -1,12 +1,17 @@
 import hashlib
 import json
+import logging
 import uuid
 
 from flask import Blueprint, jsonify, request
 
 import backend.cdss.engine as engine
+from backend.audit import log_event
+from backend.biomarkers import latest_biomarkers, patient_exists
 from backend.cdss.features import FeatureError
 from backend.middleware.rbac import role_required
+
+log = logging.getLogger(__name__)
 
 predictions_bp = Blueprint("predictions", __name__, url_prefix="/api/v1/predictions")
 
@@ -72,10 +77,22 @@ def run_cdss_inference():
     if modality not in MODALITIES:
         return _error(400, "UNKNOWN_MODALITY", f"modality must be one of {MODALITIES}.")
 
+    if not patient_exists(patient_id):
+        return _error(404, "PATIENT_NOT_FOUND", f"Patient {patient_id} not found.")
+
     baseline_hash = req_data.get("baseline_hash")
     biomarker_payload = req_data.get("biomarker_payload") or {}
     if not isinstance(biomarker_payload, dict):
         return _error(400, "INVALID_FEATURE", "biomarker_payload must be an object.")
+
+    # No biomarkers in the request: use the patient's latest stored values for this modality.
+    biomarker_source = "request"
+    if not biomarker_payload:
+        stored = latest_biomarkers(modality, patient_id)
+        if not stored:
+            return _error(404, "NO_BIOMARKERS",
+                          f"No biomarker_payload sent and no {modality} biomarkers stored for this patient.")
+        biomarker_payload, biomarker_source = stored, "database"
 
     try:
         risk = engine.evaluate_biomarkers(modality, biomarker_payload)
@@ -115,6 +132,7 @@ def run_cdss_inference():
         "model_version": risk["model_version"],
         "is_stub": is_stub,
         "missing_features": risk["missing_features"],
+        "biomarker_source": biomarker_source,
         "biomarker_payload": biomarker_payload,
         "risk": risk_dict,
         "shap": {"drivers": risk["drivers"]},
@@ -136,6 +154,33 @@ def run_cdss_inference():
             "reason": "Trajectory comparison against the baseline is not implemented yet.",
         }
 
+    # Every inference is written to the sealed audit ledger. If that fails, the result is
+    # not returned: an AI result with no audit trail must not reach a clinician.
+    claims = request.current_user
+    try:
+        response_payload["audit_id"] = log_event(
+            "INFERENCE",
+            {
+                "modality": modality,
+                "model_version": risk["model_version"],
+                "is_stub": is_stub,
+                "biomarker_source": biomarker_source,
+                "inputs": biomarker_payload,
+                "score": score_val,
+                "probability": risk["probability"],
+                "tier": tier_val,
+                "missing_features": risk["missing_features"],
+                "drivers": risk["drivers"],
+                "inference_hash": inf_hash,
+            },
+            patient_id=patient_id,
+            doctor_id=claims.get("doctor_id"),
+            actor_user_id=claims.get("user_id"),
+        )
+    except Exception:
+        log.exception("Audit log failed for inference on patient %s", patient_id)
+        return _error(500, "AUDIT_LOG_FAILED", "The inference could not be recorded in the audit ledger. Please retry.")
+
     return jsonify(response_payload), 200
 
 
@@ -151,4 +196,10 @@ def models_status():
 def models_reload():
     """Clear the cache of the registry inference uses, so the next call reloads from disk."""
     engine.registry.clear_cache()
-    return jsonify({"status": "success", "message": "Model cache cleared"}), 200
+    try:
+        audit_id = log_event("MODELS_RELOADED", {"message": "Model cache cleared"},
+                             actor_user_id=request.current_user.get("user_id"))
+    except Exception:
+        log.exception("Audit log failed for model reload")
+        return _error(500, "AUDIT_LOG_FAILED", "Models were reloaded but the audit entry could not be written.")
+    return jsonify({"status": "success", "message": "Model cache cleared", "audit_id": audit_id}), 200

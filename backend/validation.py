@@ -117,3 +117,60 @@ def family_history_weights(role, data):
         return DEFAULT_RELATIONSHIP_WEIGHT, DEFAULT_ONSET_WEIGHT
     return (_weight(data, "relationship_weight", DEFAULT_RELATIONSHIP_WEIGHT),
             _weight(data, "onset_weight", DEFAULT_ONSET_WEIGHT))
+
+
+def _numeric_limit(precision, scale):
+    """Largest absolute value a Numeric(precision, scale) column can store."""
+    scale = scale or 0
+    return 10 ** (precision - scale) - 10 ** (-scale)
+
+
+def validate_biomarkers(spec, values):
+    """
+    Check a biomarker payload against a column spec before it reaches the database.
+
+    spec maps field -> ("numeric", precision, scale) | ("integer",) | ("string", length);
+    precision None means unbounded. Unknown fields, wrong types and values that do not
+    fit the column are rejected (instead of a database overflow error). None is dropped.
+    """
+    if not isinstance(values, dict):
+        raise ValidationError("values must be a JSON object of biomarker fields.", ["values"])
+
+    unknown = sorted(k for k in values if k not in spec)
+    if unknown:
+        raise ValidationError(f"Unknown biomarker fields: {', '.join(unknown)}", unknown)
+
+    cleaned, bad = {}, []
+    for field, value in values.items():
+        if value is None:
+            continue
+        kind = spec[field][0]
+        if kind == "string":
+            length = spec[field][1]
+            if not isinstance(value, str) or (length and len(value) > length):
+                bad.append(field)
+                continue
+            cleaned[field] = value
+            continue
+
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            bad.append(field)
+            continue
+        if kind == "integer":
+            if value != int(value):
+                bad.append(field)
+                continue
+            cleaned[field] = int(value)
+            continue
+
+        precision, scale = spec[field][1], spec[field][2]
+        if precision is not None and abs(value) > _numeric_limit(precision, scale):
+            bad.append(field)
+            continue
+        cleaned[field] = value
+
+    if bad:
+        raise ValidationError(f"Invalid value for: {', '.join(bad)} (wrong type or does not fit the column)", bad)
+    if not cleaned:
+        raise ValidationError("values must contain at least one biomarker.", ["values"])
+    return cleaned
