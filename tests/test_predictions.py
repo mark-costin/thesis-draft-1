@@ -24,14 +24,22 @@ class PredictionRouteTests(unittest.TestCase):
         self.audit_events = []
         self.audit_fails = False
         self.patient_found = True
-        self.stored_biomarkers = None
+        self.stored_input = None
+        self.fhrs = {"disease": "cvd", "relatives_counted": 3, "pedigree_sum": 2.625, "clustering": 1.0,
+                     "bio_fhrs": 3.625, "hazards": ["secondhand_smoke"], "environmental_modifier": 1.15,
+                     "adjusted_fhrs": 4.16875, "band": 3, "band_label": "Pronounced Risk", "skipped_records": []}
+        self.recorded_fhrs = []
         self.patches = [
             patch.object(engine, "registry", self.reg, create=True),
             patch("backend.middleware.rbac.load_user", create=True, side_effect=self._user),
             patch("backend.routes.predictions.patient_exists", create=True,
                   side_effect=lambda pid: self.patient_found),
-            patch("backend.routes.predictions.latest_biomarkers", create=True,
-                  side_effect=lambda modality, pid: self.stored_biomarkers),
+            patch("backend.routes.predictions.build_model_input", create=True,
+                  side_effect=lambda modality, pid: self.stored_input),
+            patch("backend.routes.predictions.patient_fhrs", create=True,
+                  side_effect=lambda pid, modality: self.fhrs),
+            patch("backend.routes.predictions.record_fhrs", create=True,
+                  side_effect=lambda pid, result: self.recorded_fhrs.append((pid, result))),
             patch("backend.routes.predictions.log_event", create=True, side_effect=self._log_event),
         ]
         for p in self.patches:
@@ -89,12 +97,23 @@ class PredictionRouteTests(unittest.TestCase):
         self.assertEqual([e["event_type"] for e in self.audit_events], ["MODELS_RELOADED"])
 
     # --- biomarkers from the database ---------------------------------------
-    def test_without_payload_the_latest_stored_biomarkers_are_used(self):
+    def test_without_payload_the_model_input_is_built_from_the_database(self):
         write_model(self.dir)
-        self.stored_biomarkers = {"age": 50, "sbp": 130}
+        self.stored_input = {"features": {"age": 50, "systolic_bp": 130}, "fhrs": self.fhrs, "records": 2}
         body = self.infer({"patient_id": 7, "modality": "cvd"}).get_json()
         self.assertEqual(body["biomarker_source"], "database")
         self.assertEqual(body["missing_features"], [])
+        self.assertEqual(body["biomarker_payload"]["systolic_bp"], 130)
+
+    def test_request_payload_gets_the_patients_fhrs_inputs(self):
+        write_model(self.dir)
+        payload = self.infer().get_json()["biomarker_payload"]
+        self.assertEqual((payload["adjusted_fhrs_cvd"], payload["fhrs_band_cvd"]), (4.16875, 3))
+
+    def test_fhrs_sent_with_the_request_is_not_overwritten(self):
+        write_model(self.dir)
+        body = {**PAYLOAD, "biomarker_payload": {"age": 50, "sbp": 130, "adjusted_fhrs_cvd": 0.5}}
+        self.assertEqual(self.infer(body).get_json()["biomarker_payload"]["adjusted_fhrs_cvd"], 0.5)
 
     def test_request_payload_is_reported_as_the_source(self):
         write_model(self.dir)
@@ -169,11 +188,24 @@ class PredictionRouteTests(unittest.TestCase):
         self.assertEqual(body["risk"]["tier"], "UNAVAILABLE")
         self.assertTrue(body["is_stub"])
 
-    def test_fhrs_values_are_marked_placeholder(self):
+    def test_fhrs_breakdown_is_the_real_score(self):
         write_model(self.dir)
         fhrs = self.infer().get_json()["fhrs_decomposition"]
-        self.assertTrue(fhrs["placeholder"])
-        self.assertIsNone(fhrs["base_score"])
+        self.assertFalse(fhrs["placeholder"])
+        self.assertEqual((fhrs["adjusted_fhrs"], fhrs["band"], fhrs["band_label"]), (4.1688, 3, "Pronounced Risk"))
+        self.assertEqual((fhrs["base_score"], fhrs["environmental_modifier"]), (3.625, 1.15))
+
+    def test_fhrs_is_recorded_and_audited_with_the_inference(self):
+        write_model(self.dir)
+        self.infer()
+        self.assertEqual([pid for pid, _ in self.recorded_fhrs], [7])
+        self.assertEqual(self.audit_events[0]["payload"]["fhrs"]["band"], 3)
+
+    def test_unknown_patient_records_no_fhrs(self):
+        write_model(self.dir)
+        self.patient_found = False
+        self.infer()
+        self.assertEqual(self.recorded_fhrs, [])
 
     def test_phase_two_deltas_are_marked_placeholder(self):
         write_model(self.dir)

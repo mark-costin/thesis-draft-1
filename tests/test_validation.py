@@ -99,37 +99,79 @@ class PatientIdTests(unittest.TestCase):
             parse_patient_id("0")
 
 
-class FhrsWeightTests(unittest.TestCase):
-    def weights(self, role, **data):
-        from backend.validation import family_history_weights
-        return family_history_weights(role, data)
+class FamilyHistoryEntryTests(unittest.TestCase):
+    """
+    validate_family_history: tier and onset are fixed categories from the FHRS Guide and the
+    weights are looked up from cdss_spec.json, never typed in. Only staff can mark verified.
+    """
 
-    def test_patient_supplied_weights_are_ignored(self):
-        from backend.validation import DEFAULT_ONSET_WEIGHT, DEFAULT_RELATIONSHIP_WEIGHT
-        self.assertEqual(self.weights("PATIENT", relationship_weight=99, onset_weight=99),
-                         (DEFAULT_RELATIONSHIP_WEIGHT, DEFAULT_ONSET_WEIGHT))
+    def entry(self, role="DOCTOR", **data):
+        from backend.validation import validate_family_history
+        body = {"disease_domain": "cvd", "relationship_tier": 1, "onset_classification": "early"}
+        body.update(data)
+        return validate_family_history(role, body)
 
-    def test_doctor_supplied_weights_are_used(self):
-        self.assertEqual(self.weights("DOCTOR", relationship_weight=0.25, onset_weight=1.5), (0.25, 1.5))
-
-    def test_doctor_defaults_when_weights_missing(self):
-        from backend.validation import DEFAULT_ONSET_WEIGHT, DEFAULT_RELATIONSHIP_WEIGHT
-        self.assertEqual(self.weights("DOCTOR"), (DEFAULT_RELATIONSHIP_WEIGHT, DEFAULT_ONSET_WEIGHT))
-
-    def test_negative_weight_is_rejected(self):
+    def rejected(self, field, role="DOCTOR", **data):
         from backend.validation import ValidationError
-        with self.assertRaises(ValidationError):
-            self.weights("DOCTOR", relationship_weight=-1)
+        with self.assertRaises(ValidationError) as ctx:
+            self.entry(role, **data)
+        self.assertIn(field, ctx.exception.fields)
 
-    def test_non_numeric_weight_is_rejected(self):
-        from backend.validation import ValidationError
-        with self.assertRaises(ValidationError):
-            self.weights("ADMIN", onset_weight="high")
+    def test_weights_come_from_the_spec(self):
+        e = self.entry(relationship_tier=2, onset_classification="severe_early")
+        self.assertEqual((e["relationship_weight"], e["onset_weight"]), (0.25, 3.0))
+        self.assertEqual((e["relationship_tier"], e["onset_classification"]), ("2", "severe_early"))
 
-    def test_infinite_weight_is_rejected(self):
-        from backend.validation import ValidationError
+    def test_typed_in_weights_are_ignored_for_everyone(self):
+        e = self.entry(relationship_weight=99, onset_weight=99)
+        self.assertEqual((e["relationship_weight"], e["onset_weight"]), (0.5, 2.0))
+
+    def test_older_spellings_are_accepted(self):
+        e = self.entry(disease_domain="CVD", relationship_tier="Tier 3", onset_classification="Late onset")
+        self.assertEqual((e["disease_domain"], e["relationship_tier"], e["onset_classification"]), ("cvd", "3", "late"))
+
+    def test_disease_names_are_mapped_to_the_four_models(self):
+        for name, code in (("Diabetes", "t2d"), ("respiratory", "resp"), ("Mental health", "neuro")):
+            self.assertEqual(self.entry(disease_domain=name)["disease_domain"], code)
+
+    def test_tier_and_onset_are_required(self):
+        from backend.validation import ValidationError, validate_family_history
+        with self.assertRaises(ValidationError) as ctx:
+            validate_family_history("DOCTOR", {"disease_domain": "cvd"})
+        self.assertEqual(sorted(ctx.exception.fields), ["onset_classification", "relationship_tier"])
+
+    def test_unknown_values_are_rejected_by_field(self):
+        self.rejected("relationship_tier", relationship_tier=4)
+        self.rejected("onset_classification", onset_classification="sudden")
+        self.rejected("disease_domain", disease_domain="kidney")
+        self.rejected("age_at_diagnosis", age_at_diagnosis=-1)
+
+    def test_only_staff_can_mark_verified(self):
+        self.assertTrue(self.entry("DOCTOR", is_verified=True)["is_verified"])
+        self.assertFalse(self.entry("PATIENT", is_verified=True)["is_verified"])
+        self.assertFalse(self.entry("DOCTOR")["is_verified"])
+
+
+class SexAndHazardTests(unittest.TestCase):
+    def test_biological_sex_uses_the_dictionary_spelling(self):
+        from backend.validation import parse_biological_sex
+        self.assertEqual(parse_biological_sex(" male "), "Male")
+        self.assertEqual(parse_biological_sex("FEMALE"), "Female")
+
+    def test_other_sex_values_are_rejected(self):
+        from backend.validation import ValidationError, parse_biological_sex
+        for value in ("F", "Prefer not to say", None, 1):
+            with self.assertRaises(ValidationError):
+                parse_biological_sex(value)
+
+    def test_hazard_must_be_on_that_diseases_list(self):
+        from backend.validation import ValidationError, validate_hazard
+        self.assertEqual(validate_hazard({"disease_domain": "Respiratory", "hazard_code": "biomass_heating"}),
+                         ("resp", "biomass_heating"))
         with self.assertRaises(ValidationError):
-            self.weights("DOCTOR", onset_weight=float("inf"))
+            validate_hazard({"disease_domain": "cvd", "hazard_code": "biomass_heating"})
+        with self.assertRaises(ValidationError):
+            validate_hazard({"disease_domain": "neuro", "hazard_code": "stress"})
 
 
 if __name__ == "__main__":

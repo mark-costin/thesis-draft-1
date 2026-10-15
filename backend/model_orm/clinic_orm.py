@@ -45,6 +45,24 @@ class FamilyHistory(db.Model):
     onset_weight = db.Column(db.Numeric, nullable=False)
     age_at_diagnosis = db.Column(db.Integer)
     shared_environment = db.Column(db.Boolean, default=False)
+    # S_i in the FHRS formula: verified (records exist) 1.0, unverified 0.5. Only staff set it.
+    is_verified = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    recorded_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
+
+
+class EnvironmentalHazard(db.Model):
+    """
+    A shared domestic hazard (e_j in the FHRS formula) for one disease. hazard_code is a key in
+    cdss_spec.json -> fhrs.environmental_hazards.<disease>; its value is read from there.
+    """
+    __tablename__ = 'patient_environmental_hazards'
+    __table_args__ = (db.UniqueConstraint('patient_id', 'disease_domain', 'hazard_code',
+                                          name='patient_environmental_hazards_unique'),)
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), nullable=False, index=True)
+    disease_domain = db.Column(db.String(10), nullable=False)
+    hazard_code = db.Column(db.String(50), nullable=False)
     recorded_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
 
 

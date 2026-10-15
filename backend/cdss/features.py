@@ -3,12 +3,11 @@ Translates incoming biomarker payloads (database / API names) into the exact fea
 names each trained model expects. Training and serving must agree on names AND encodings,
 otherwise inputs silently become NaN.
 
-TO FILL IN (must match your training pipeline):
-  * SEX_ENCODING — how biological_sex was encoded when the models were trained.
-  * FEATURE_RENAMES for t2d / resp / neuro — compare each model's feature_columns
-    (ml/models/<disease>_head_latest.json) with the database columns in clinic_orm.py.
-  * Derived features (adjusted_fhrs_cvd, fhrs_band_cvd, m_*, v_*) are NOT computed here;
-    they must be computed with the same code the training pipeline used.
+Configured to match the training pipeline:
+  * SEX_ENCODING and FEATURE_RENAMES are set from the CDSS dictionary and each model's
+    feature_columns (ml/models/<disease>_head_latest.json).
+  * Derived features (adjusted_fhrs_<d>, fhrs_band_<d>, m_*, v_*) are computed in
+    backend/cdss/feature_builder.py, the same way experiment/src/ml/data.py did.
 """
 
 
@@ -23,11 +22,13 @@ FEATURE_RENAMES = {
         "dbp": "diastolic_bp",
         "triglycerides": "tg",
     },
+    "t2d": {"triglycerides": "tg"},
+    "neuro": {"daily_sleep": "sleep_hours"},
 }
 
-# Set this to the encoding used in training, e.g. {"male": 1, "female": 0}.
-# Left as None on purpose: guessing it would silently flip every prediction's sex input.
-SEX_ENCODING = None
+# CDSS_Data_Dictionary.pdf (pages 11 and 21): Female (0), Male (1). The generator draws 0/1
+# without a label, so the dictionary is the authority for which is which.
+SEX_ENCODING = {"female": 0, "male": 1}
 
 
 def normalize_payload(disease: str, payload: dict) -> dict:

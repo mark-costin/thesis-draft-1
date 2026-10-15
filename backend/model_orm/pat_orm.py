@@ -2,6 +2,7 @@ from backend.dbconnect import db
 
 class Patient(db.Model):
     __tablename__ = 'patients'
+    __table_args__ = (db.CheckConstraint("biological_sex IN ('Female', 'Male')", name='patients_biological_sex_check'),)
 
     patient_id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.user_id', ondelete='CASCADE'), unique=True, nullable=False)
@@ -11,6 +12,8 @@ class Patient(db.Model):
     suffix = db.Column(db.String(20), default='N/A')
     date_of_birth = db.Column(db.Date, nullable=False)
     gender = db.Column(db.String(20), nullable=False)
+    # Used by all four models (CDSS dictionary: Female 0, Male 1). Set by a doctor; blank until then.
+    biological_sex = db.Column(db.String(10))
     religion = db.Column(db.String(50))
     address = db.Column(db.Text, nullable=False)
     contact_number = db.Column(db.String(20), nullable=False)
@@ -26,6 +29,7 @@ class Patient(db.Model):
     # --- Hereditary & Vector AI Layer (clinic_orm.py & clinical_vector.py) ---
     family_history = db.relationship('FamilyHistory', backref='patient', cascade='all, delete-orphan', lazy=True)
     fhrs_records = db.relationship('FHRSStratification', backref='patient', cascade='all, delete-orphan', lazy=True)
+    environmental_hazards = db.relationship('EnvironmentalHazard', backref='patient', cascade='all, delete-orphan', lazy=True)
     clinical_vector = db.relationship('ClinicalVector', backref='patient', uselist=False, cascade='all, delete-orphan')
 
     # --- 4 Chronic Disease Modality Relationships (clinic_orm.py) ---

@@ -2,11 +2,14 @@ from flask import Blueprint, request, jsonify
 from backend.dbconnect import db
 from backend.model_orm.pat_orm import Patient
 from backend.model_orm.doc_orm import Doctor
-from backend.model_orm.clinic_orm import Encounter, FamilyHistory
+from backend.model_orm.clinic_orm import Encounter, EnvironmentalHazard, FamilyHistory
 from backend.middleware.rbac import role_required
 from backend.middleware.sanitizer import sanitize_response
 from backend.triage_queue import TriageQueue
-from backend.validation import ValidationError, family_history_weights, parse_patient_id
+from backend.validation import (
+    ValidationError, parse_biological_sex, parse_disease, parse_onset, parse_patient_id, parse_tier,
+    validate_family_history, validate_hazard,
+)
 
 patient_bp = Blueprint('patient', __name__, url_prefix='/api/v1/patient')
 
@@ -142,25 +145,32 @@ def get_family_history():
     for r in records:
         history_data.append({
             "record_id": r.record_id,
-            "disease_domain": r.disease_domain,
+            "disease_domain": parse_disease(r.disease_domain) or r.disease_domain,
             "specific_diagnosis": r.specific_diagnosis,
-            "relationship_tier": r.relationship_tier,
-            "relationship_weight": float(r.relationship_weight) if r.relationship_weight is not None else 0.0,
-            "onset_classification": r.onset_classification,
-            "onset_weight": float(r.onset_weight) if r.onset_weight is not None else 1.0,
+            "relationship_tier": parse_tier(r.relationship_tier) or r.relationship_tier,
+            "relationship_weight": float(r.relationship_weight) if r.relationship_weight is not None else None,
+            "onset_classification": parse_onset(r.onset_classification) or r.onset_classification,
+            "onset_weight": float(r.onset_weight) if r.onset_weight is not None else None,
+            "age_at_diagnosis": r.age_at_diagnosis,
             "shared_environment": r.shared_environment,
+            "is_verified": bool(r.is_verified),
             "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None
         })
 
     return jsonify({"status": "success", "family_history": history_data}), 200
 
 
+def _validation_error(exc):
+    return jsonify({"status": "error", "code": "VALIDATION_FAILED", "error": str(exc), "fields": exc.fields}), 400
+
+
 @patient_bp.route('/family-history', methods=['POST'])
 @role_required(['PATIENT', 'DOCTOR', 'ADMIN'])
 def add_family_history():
     """
-    Records a new familial hereditary risk entry.
-    Patients cannot set FHRS weights; clinicians may (validated).
+    Records one affected relative. Tier (1-3) and onset (severe_early, early, typical, late)
+    are required; their weights come from cdss_spec.json (CDSS FHRS Guide), never the request.
+    Only a doctor or admin can mark the diagnosis verified.
     """
     claims = request.current_user
     data = request.get_json(silent=True) or {}
@@ -170,35 +180,143 @@ def add_family_history():
         return err
     if not target_pid:
         return jsonify({"status": "error", "error": "Valid patient ID is required"}), 400
-
-    disease_domain = data.get("disease_domain")
-    if not disease_domain:
-        return jsonify({"status": "error", "error": "disease_domain is required"}), 400
+    if db.session.get(Patient, target_pid) is None:
+        return jsonify({"status": "error", "code": "PATIENT_NOT_FOUND", "error": "Patient not found."}), 404
 
     try:
-        rel_weight, onset_weight = family_history_weights(claims.get("role"), data)
+        entry = validate_family_history(claims.get("role"), data)
     except ValidationError as exc:
-        return jsonify({"status": "error", "code": "VALIDATION_FAILED", "error": str(exc)}), 400
+        return _validation_error(exc)
 
-    new_record = FamilyHistory(
-        patient_id=target_pid,
-        disease_domain=disease_domain,
-        specific_diagnosis=data.get("specific_diagnosis", disease_domain),
-        relationship_tier=data.get("relationship_tier", "Tier 1"),
-        relationship_weight=rel_weight,
-        onset_classification=data.get("onset_classification", "Typical onset"),
-        onset_weight=onset_weight,
-        shared_environment=bool(data.get("shared_environment", False))
-    )
-
+    new_record = FamilyHistory(patient_id=target_pid, **entry)
     db.session.add(new_record)
     db.session.commit()
 
     return jsonify({
         "status": "success",
         "message": "Family history record successfully stored in repository.",
-        "record_id": new_record.record_id
+        "record_id": new_record.record_id,
+        "is_verified": new_record.is_verified,
     }), 201
+
+
+@patient_bp.route('/family-history/<int:record_id>/verify', methods=['POST'])
+@role_required(['DOCTOR', 'ADMIN'])
+def verify_family_history(record_id):
+    """A doctor confirms a relative's diagnosis (records or lab results seen): S_i becomes 1.0."""
+    record = db.session.get(FamilyHistory, record_id)
+    if record is None:
+        return jsonify({"status": "error", "code": "NOT_FOUND", "error": "Family history record not found."}), 404
+    record.is_verified = True
+    db.session.commit()
+    return jsonify({"status": "success", "record_id": record_id, "is_verified": True}), 200
+
+
+# --------------------------------------------------------------------------
+# 2b. ENVIRONMENTAL HAZARDS, BIOLOGICAL SEX AND THE FHRS VIEW
+# --------------------------------------------------------------------------
+def _hazard_catalogue():
+    from backend.cdss.fhrs import HAZARDS
+    return {d: [{k: h[k] for k in ("code", "label", "e_j", "evidence", "source", "status")} for h in hazards.values()]
+            for d, hazards in HAZARDS.items()}
+
+
+@patient_bp.route('/hazards', methods=['GET'])
+@role_required(['PATIENT', 'DOCTOR', 'ADMIN'])
+def get_hazards():
+    """The patient's recorded hazards, plus the fixed list per disease to choose from."""
+    from backend.cdss.fhrs import HAZARDS
+    claims = request.current_user
+    target_pid, err = _target_patient(claims, request.args.get("patient_id"))
+    if err:
+        return err
+    if not target_pid:
+        return jsonify({"status": "error", "error": "Patient not identified"}), 404
+
+    rows = EnvironmentalHazard.query.filter_by(patient_id=target_pid).order_by(EnvironmentalHazard.id).all()
+    hazards = []
+    for h in rows:
+        info = HAZARDS.get(h.disease_domain, {}).get(h.hazard_code, {})
+        hazards.append({"id": h.id, "disease_domain": h.disease_domain, "hazard_code": h.hazard_code,
+                        "label": info.get("label"), "e_j": info.get("e_j"),
+                        "recorded_at": h.recorded_at.isoformat() if h.recorded_at else None})
+    return jsonify({"status": "success", "patient_id": target_pid, "hazards": hazards,
+                    "catalogue": _hazard_catalogue()}), 200
+
+
+@patient_bp.route('/hazards', methods=['POST'])
+@role_required(['PATIENT', 'DOCTOR', 'ADMIN'])
+def add_hazard():
+    """Records a shared domestic hazard from the fixed list (FHRS questionnaire)."""
+    claims = request.current_user
+    data = request.get_json(silent=True) or {}
+    target_pid, err = _target_patient(claims, data.get("patient_id"))
+    if err:
+        return err
+    if not target_pid:
+        return jsonify({"status": "error", "error": "Valid patient ID is required"}), 400
+    if db.session.get(Patient, target_pid) is None:
+        return jsonify({"status": "error", "code": "PATIENT_NOT_FOUND", "error": "Patient not found."}), 404
+    try:
+        disease, code = validate_hazard(data)
+    except ValidationError as exc:
+        return _validation_error(exc)
+
+    if EnvironmentalHazard.query.filter_by(patient_id=target_pid, disease_domain=disease, hazard_code=code).first():
+        return jsonify({"status": "error", "code": "ALREADY_RECORDED",
+                        "error": "This hazard is already recorded for this patient and disease."}), 409
+    row = EnvironmentalHazard(patient_id=target_pid, disease_domain=disease, hazard_code=code)
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({"status": "success", "id": row.id, "disease_domain": disease, "hazard_code": code}), 201
+
+
+@patient_bp.route('/hazards/<int:hazard_id>', methods=['DELETE'])
+@role_required(['DOCTOR', 'ADMIN'])
+def remove_hazard(hazard_id):
+    row = db.session.get(EnvironmentalHazard, hazard_id)
+    if row is None:
+        return jsonify({"status": "error", "code": "NOT_FOUND", "error": "Hazard not found."}), 404
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({"status": "success", "id": hazard_id}), 200
+
+
+@patient_bp.route('/biological-sex', methods=['POST'])
+@role_required(['DOCTOR', 'ADMIN'])
+def set_biological_sex():
+    """Sets the biological sex all four models use (CDSS dictionary: Female 0, Male 1)."""
+    data = request.get_json(silent=True) or {}
+    try:
+        patient_id = parse_patient_id(data.get("patient_id"))
+        sex = parse_biological_sex(data.get("biological_sex"))
+    except ValidationError as exc:
+        return _validation_error(exc)
+    patient = db.session.get(Patient, patient_id)
+    if patient is None:
+        return jsonify({"status": "error", "code": "PATIENT_NOT_FOUND", "error": "Patient not found."}), 404
+    patient.biological_sex = sex
+    db.session.commit()
+    return jsonify({"status": "success", "patient_id": patient_id, "biological_sex": sex}), 200
+
+
+@patient_bp.route('/fhrs', methods=['GET'])
+@role_required(['PATIENT', 'DOCTOR', 'ADMIN'])
+def get_fhrs():
+    """The FHRS breakdown for one disease (?disease=cvd|t2d|resp|neuro). Computed, not stored."""
+    from backend.fhrs_store import fhrs_summary, patient_fhrs
+    claims = request.current_user
+    target_pid, err = _target_patient(claims, request.args.get("patient_id"))
+    if err:
+        return err
+    if not target_pid:
+        return jsonify({"status": "error", "error": "Patient not identified"}), 404
+    disease = parse_disease(request.args.get("disease"))
+    if disease is None:
+        return jsonify({"status": "error", "code": "VALIDATION_FAILED",
+                        "error": "disease must be cvd, t2d, resp or neuro.", "fields": ["disease"]}), 400
+    return jsonify({"status": "success", "patient_id": target_pid, "disease": disease,
+                    "fhrs": fhrs_summary(patient_fhrs(target_pid, disease))}), 200
 
 
 # --------------------------------------------------------------------------

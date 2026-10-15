@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import os
 import platform
 from importlib import metadata as importlib_metadata
 from pathlib import Path
@@ -11,11 +12,30 @@ from backend.cdss.stub import DeterministicStub
 
 log = logging.getLogger(__name__)
 
-# Look for models in ml/models (or experiments/models as fallback)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-MODEL_DIR = BASE_DIR / "ml" / "models"
-if not MODEL_DIR.exists():
-    MODEL_DIR = BASE_DIR / "experiments" / "models"
+
+# Where the trained models are, in order. experiment/data/models is where the training
+# pipeline saves them; CDSS_MODEL_DIR in .env overrides everything.
+MODEL_DIR_CANDIDATES = (Path("experiment") / "data" / "models", Path("ml") / "models")
+
+
+def resolve_model_dir(base_dir=BASE_DIR, env=None):
+    """
+    The folder to load models from. Logs an ERROR when none exists, because every
+    prediction would then come from the stub (the old setting failed silently this way).
+    """
+    env = os.environ if env is None else env
+    if env.get("CDSS_MODEL_DIR"):
+        return Path(env["CDSS_MODEL_DIR"])
+    for candidate in MODEL_DIR_CANDIDATES:
+        if (base_dir / candidate).is_dir():
+            return base_dir / candidate
+    log.error("No model folder found (looked for %s under %s); every prediction will use the stub. "
+              "Set CDSS_MODEL_DIR in .env.", ", ".join(str(c) for c in MODEL_DIR_CANDIDATES), base_dir)
+    return base_dir / MODEL_DIR_CANDIDATES[0]
+
+
+MODEL_DIR = resolve_model_dir()
 
 DISEASES = ["cvd", "t2d", "resp", "neuro"]
 

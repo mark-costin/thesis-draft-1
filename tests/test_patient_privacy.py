@@ -123,7 +123,8 @@ class PatientPrivacyTests(unittest.TestCase):
 
     def test_patient_asking_for_other_id_gets_own_history(self):
         self.client.post(f"{BASE}/family-history", headers=self.h(DOC_USER, "DOCTOR"),
-                         json={"patient_id": BEN, "disease_domain": "CVD"})
+                         json={"patient_id": BEN, "disease_domain": "CVD", "relationship_tier": 1,
+                               "onset_classification": "typical"})
         r = self.client.get(f"{BASE}/family-history?patient_id={BEN}", headers=self.h(ANA_USER))
         self.assertEqual(r.get_json()["family_history"], [])
 
@@ -131,27 +132,28 @@ class PatientPrivacyTests(unittest.TestCase):
         r = self.client.get(f"{BASE}/family-history?patient_id=abc", headers=self.h(DOC_USER, "DOCTOR"))
         self.assertEqual(r.status_code, 400)
 
-    # --- FHRS weights -----------------------------------------------------
+    # --- FHRS weights come from the spec, never from the request -----------
     def test_patient_supplied_weights_are_not_stored(self):
-        from backend.validation import DEFAULT_ONSET_WEIGHT, DEFAULT_RELATIONSHIP_WEIGHT
         r = self.client.post(f"{BASE}/family-history", headers=self.h(ANA_USER),
-                             json={"disease_domain": "CVD", "relationship_weight": 99, "onset_weight": 99})
+                             json={"disease_domain": "CVD", "relationship_tier": 2, "onset_classification": "early",
+                                   "relationship_weight": 99, "onset_weight": 99})
         self.assertEqual(r.status_code, 201)
         rec = self.db.session.get(self.FamilyHistory, r.get_json()["record_id"])
-        self.assertEqual(float(rec.relationship_weight), DEFAULT_RELATIONSHIP_WEIGHT)
-        self.assertEqual(float(rec.onset_weight), DEFAULT_ONSET_WEIGHT)
+        self.assertEqual((float(rec.relationship_weight), float(rec.onset_weight)), (0.25, 2.0))
 
-    def test_doctor_negative_weight_is_rejected(self):
+    def test_doctor_supplied_weights_are_not_stored_either(self):
         r = self.client.post(f"{BASE}/family-history", headers=self.h(DOC_USER, "DOCTOR"),
-                             json={"patient_id": ANA, "disease_domain": "CVD", "relationship_weight": -1})
-        self.assertEqual(r.status_code, 400)
+                             json={"patient_id": ANA, "disease_domain": "cvd", "relationship_tier": 1,
+                                   "onset_classification": "late", "relationship_weight": -1})
+        self.assertEqual(r.status_code, 201)
+        rec = self.db.session.get(self.FamilyHistory, r.get_json()["record_id"])
+        self.assertEqual((float(rec.relationship_weight), float(rec.onset_weight)), (0.5, 0.75))
 
-    def test_zero_onset_weight_is_reported_as_zero(self):
-        self.client.post(f"{BASE}/family-history", headers=self.h(DOC_USER, "DOCTOR"),
-                         json={"patient_id": ANA, "disease_domain": "CVD", "onset_weight": 0})
-        history = self.client.get(f"{BASE}/family-history?patient_id={ANA}",
-                                  headers=self.h(DOC_USER, "DOCTOR")).get_json()["family_history"]
-        self.assertEqual(history[0]["onset_weight"], 0.0)
+    def test_missing_tier_is_400_naming_the_field(self):
+        r = self.client.post(f"{BASE}/family-history", headers=self.h(DOC_USER, "DOCTOR"),
+                             json={"patient_id": ANA, "disease_domain": "cvd", "onset_classification": "typical"})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["fields"], ["relationship_tier"])
 
 
 if __name__ == "__main__":

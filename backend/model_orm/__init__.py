@@ -8,6 +8,7 @@ from .pat_orm import Patient
 from .clinic_orm import (
     IdempotencyCache,
     FamilyHistory,
+    EnvironmentalHazard,
     FHRSStratification,
     CVDMetrics,
     T2DMetrics,
@@ -26,6 +27,7 @@ __all__ = [
     "Patient",
     "IdempotencyCache",
     "FamilyHistory",
+    "EnvironmentalHazard",
     "FHRSStratification",
     "CVDMetrics",
     "T2DMetrics",

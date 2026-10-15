@@ -2,44 +2,234 @@
   "_source": "CDSS_Data_Dictionary.pdf (physician-validated; Harrison's Principles of Internal Medicine 19th Ed.; Thompson & Thompson Genetics and Genomics in Medicine 9th Ed.)",
   "_scope": "Parameter Ingestion Tables (min/max) for features the generator produces, and the FHRS Guide constants.",
   "feature_bounds": {
-    "age":               {"unit": "years",         "min": 18,   "max": 100},
-    "systolic_bp":       {"unit": "mmHg",          "min": 70,   "max": 220},
-    "diastolic_bp":      {"unit": "mmHg",          "min": 40,   "max": 130},
-    "resting_hr":        {"unit": "bpm",           "min": 40,   "max": 180},
-    "bmi":               {"unit": "kg/m2",         "min": 12.0, "max": 60.0},
-    "total_cholesterol": {"unit": "mg/dL",         "min": 100,  "max": 400},
-    "hdl":               {"unit": "mg/dL",         "min": 15,   "max": 120},
-    "ldl":               {"unit": "mg/dL",         "min": 30,   "max": 300},
-    "tg":                {"unit": "mg/dL",         "min": 40,   "max": 1000},
-    "egfr":              {"unit": "mL/min/1.73m2", "min": 5,    "max": 140},
-    "fpg":               {"unit": "mg/dL",         "min": 50,   "max": 450},
-    "hba1c":             {"unit": "%",             "min": 4.0,  "max": 15.0},
-    "fev1":              {"unit": "L",             "min": 0.5,  "max": 5.5},
-    "fvc":               {"unit": "L",             "min": 1.0,  "max": 7.0},
-    "fev1_fvc_ratio":    {"unit": "%",             "min": 25.0, "max": 95.0},
-    "spo2":              {"unit": "%",             "min": 65.0, "max": 100.0},
-    "phq9":              {"unit": "score",         "min": 0,    "max": 27},
-    "gad7":              {"unit": "score",         "min": 0,    "max": 21},
-    "mmse":              {"unit": "score",         "min": 0,    "max": 30},
-    "sleep_hours":       {"unit": "hours",         "min": 1.0,  "max": 16.0}
+    "age": {
+      "unit": "years",
+      "min": 18,
+      "max": 100
+    },
+    "systolic_bp": {
+      "unit": "mmHg",
+      "min": 70,
+      "max": 220
+    },
+    "diastolic_bp": {
+      "unit": "mmHg",
+      "min": 40,
+      "max": 130
+    },
+    "resting_hr": {
+      "unit": "bpm",
+      "min": 40,
+      "max": 180
+    },
+    "bmi": {
+      "unit": "kg/m2",
+      "min": 12.0,
+      "max": 60.0
+    },
+    "total_cholesterol": {
+      "unit": "mg/dL",
+      "min": 100,
+      "max": 400
+    },
+    "hdl": {
+      "unit": "mg/dL",
+      "min": 15,
+      "max": 120
+    },
+    "ldl": {
+      "unit": "mg/dL",
+      "min": 30,
+      "max": 300
+    },
+    "tg": {
+      "unit": "mg/dL",
+      "min": 40,
+      "max": 1000
+    },
+    "egfr": {
+      "unit": "mL/min/1.73m2",
+      "min": 5,
+      "max": 140
+    },
+    "fpg": {
+      "unit": "mg/dL",
+      "min": 50,
+      "max": 450
+    },
+    "hba1c": {
+      "unit": "%",
+      "min": 4.0,
+      "max": 15.0
+    },
+    "fev1": {
+      "unit": "L",
+      "min": 0.5,
+      "max": 5.5
+    },
+    "fvc": {
+      "unit": "L",
+      "min": 1.0,
+      "max": 7.0
+    },
+    "fev1_fvc_ratio": {
+      "unit": "%",
+      "min": 25.0,
+      "max": 95.0
+    },
+    "spo2": {
+      "unit": "%",
+      "min": 65.0,
+      "max": 100.0
+    },
+    "phq9": {
+      "unit": "score",
+      "min": 0,
+      "max": 27
+    },
+    "gad7": {
+      "unit": "score",
+      "min": 0,
+      "max": 21
+    },
+    "mmse": {
+      "unit": "score",
+      "min": 0,
+      "max": 30
+    },
+    "sleep_hours": {
+      "unit": "hours",
+      "min": 1.0,
+      "max": 16.0
+    }
   },
   "fhrs": {
     "formula": "BioFHRS_d = sum(R_i * O_i * S_i) + C_d ; AdjustedFHRS_d = BioFHRS_d * E_d ; E_d = 1.0 + sum(e_j)",
     "band_score": "adjusted",
-    "kinship_by_tier": {"1": 0.50, "2": 0.25, "3": 0.125},
-    "onset_multipliers": {"severe_early": 3.00, "early": 2.00, "typical": 1.00, "late": 0.75},
-    "verification": {"verified": 1.0, "unverified": 0.5},
-    "clustering_weight_by_tier": {"1": 1.0, "2": 0.5, "3": 0.25},
+    "kinship_by_tier": {
+      "1": 0.5,
+      "2": 0.25,
+      "3": 0.125
+    },
+    "onset_multipliers": {
+      "severe_early": 3.0,
+      "early": 2.0,
+      "typical": 1.0,
+      "late": 0.75
+    },
+    "verification": {
+      "verified": 1.0,
+      "unverified": 0.5
+    },
+    "clustering_weight_by_tier": {
+      "1": 1.0,
+      "2": 0.5,
+      "3": 0.25
+    },
     "_clustering_note": "Dictionary specifies +1.0 for a verified immediate-family cluster; tier 2/3 weights (0.5, 0.25) come from the project FHRS specification, not the dictionary.",
-    "environmental_hazard_range": [0.05, 0.35],
+    "environmental_hazard_range": [
+      0.05,
+      0.35
+    ],
     "_hazard_note": "Dictionary gives one example hazard (+0.15, secondhand smoke); the 0.05-0.35 range comes from the project FHRS specification.",
-    "band_edges": [1.76, 3.51, 6.00],
+    "band_edges": [
+      1.76,
+      3.51,
+      6.0
+    ],
     "bands": [
-      {"band": 0, "label": "Baseline Risk",   "rule": "score == 0.0 (no documented familial risk)"},
-      {"band": 1, "label": "Mild Risk",       "rule": "0 < score < 1.76 (dictionary: 0.10-1.75; scores below 0.10 come from a single distant or unverified relative and are placed here)"},
-      {"band": 2, "label": "Moderate Risk",   "rule": "1.76 <= score < 3.51"},
-      {"band": 3, "label": "Pronounced Risk", "rule": "3.51 <= score <= 6.00"},
-      {"band": 4, "label": "Critical Risk",   "rule": "score > 6.00"}
-    ]
+      {
+        "band": 0,
+        "label": "Baseline Risk",
+        "rule": "score == 0.0 (no documented familial risk)"
+      },
+      {
+        "band": 1,
+        "label": "Mild Risk",
+        "rule": "0 < score < 1.76 (dictionary: 0.10-1.75; scores below 0.10 come from a single distant or unverified relative and are placed here)"
+      },
+      {
+        "band": 2,
+        "label": "Moderate Risk",
+        "rule": "1.76 <= score < 3.51"
+      },
+      {
+        "band": 3,
+        "label": "Pronounced Risk",
+        "rule": "3.51 <= score <= 6.00"
+      },
+      {
+        "band": 4,
+        "label": "Critical Risk",
+        "rule": "score > 6.00"
+      }
+    ],
+    "_hazard_scale": "e_j by strength of evidence, anchored on the dictionary's +0.15 for secondhand smoke: weak or qualitative 0.10; moderate, similar to secondhand smoke 0.15; about a 2x risk 0.20; 3x or more 0.35.",
+    "environmental_hazards": {
+      "_note": "Fixed hazard list per disease (agreed 2026-10-15). Values follow _hazard_scale and cite Harrison's Principles of Internal Medicine; only cvd.secondhand_smoke comes from the dictionary. Neuro has no hazards until a source supports one, so its E_d stays 1.0.",
+      "cvd": [
+        {
+          "code": "secondhand_smoke",
+          "label": "Secondhand smoke at home (heavy smoker in the household)",
+          "e_j": 0.15,
+          "evidence": "moderate",
+          "source": "CDSS_Data_Dictionary.pdf, FHRS Guide section 6 (worked example)",
+          "status": "dictionary"
+        },
+        {
+          "code": "high_salt_diet",
+          "label": "Very high-salt family diet",
+          "e_j": 0.1,
+          "evidence": "weak",
+          "source": "Harrison's, ch. 298",
+          "status": "project assumption, pending physician validation"
+        }
+      ],
+      "t2d": [
+        {
+          "code": "processed_diet",
+          "label": "Highly processed / high-calorie household diet",
+          "e_j": 0.15,
+          "evidence": "moderate",
+          "source": "Harrison's",
+          "status": "project assumption, pending physician validation"
+        },
+        {
+          "code": "physical_inactivity",
+          "label": "Very little household physical activity",
+          "e_j": 0.2,
+          "evidence": "strong (about 2x)",
+          "source": "Harrison's, ch. 422",
+          "status": "project assumption, pending physician validation"
+        }
+      ],
+      "resp": [
+        {
+          "code": "indoor_allergens",
+          "label": "Indoor allergens (mold, dust mites, cockroaches, pet dander)",
+          "e_j": 0.1,
+          "evidence": "weak",
+          "source": "Harrison's, ch. 311",
+          "status": "project assumption, pending physician validation"
+        },
+        {
+          "code": "biomass_heating",
+          "label": "Coal or biomass heating",
+          "e_j": 0.35,
+          "evidence": "strong (OR 3-10)",
+          "source": "Harrison's, ch. 311",
+          "status": "project assumption, pending physician validation"
+        },
+        {
+          "code": "secondhand_smoke",
+          "label": "Secondhand smoke at home",
+          "e_j": 0.15,
+          "evidence": "moderate",
+          "source": "Harrison's, ch. 470",
+          "status": "project assumption, pending physician validation"
+        }
+      ],
+      "neuro": []
+    }
   }
 }

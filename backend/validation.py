@@ -8,11 +8,6 @@ from datetime import date
 PASSWORD_MIN_CHARS = 8
 PASSWORD_MAX_BYTES = 72
 
-# FHRS weights used when no clinician-entered weight is given. These are the values the
-# original route already used; replace them with your FHRS method's table (batch 2).
-DEFAULT_RELATIONSHIP_WEIGHT = 0.5
-DEFAULT_ONSET_WEIGHT = 1.0
-
 STAFF_ROLES = {"DOCTOR", "CLINICIAN", "ADMIN", "SYSTEM_ADMIN"}
 
 PATIENT_REQUIRED = (
@@ -99,24 +94,100 @@ def parse_patient_id(value):
     return pid
 
 
-def _weight(data, field, default):
-    if data.get(field) is None:
-        return default
-    value = data[field]
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
-        raise ValidationError(f"{field} must be a number >= 0.", [field])
-    return float(value)
+# Names people use for the four disease models (family history and hazards are per model)
+DISEASE_ALIASES = {
+    "cvd": "cvd", "cardiovascular": "cvd", "heart": "cvd", "heart disease": "cvd", "hypertension": "cvd",
+    "t2d": "t2d", "diabetes": "t2d", "type 2 diabetes": "t2d",
+    "resp": "resp", "respiratory": "resp", "lung": "resp", "copd": "resp", "asthma": "resp",
+    "neuro": "neuro", "neurological": "neuro", "mental health": "neuro", "neuro/mental": "neuro",
+}
+SEX_VALUES = ("Female", "Male")   # CDSS_Data_Dictionary.pdf: Female (0), Male (1)
 
 
-def family_history_weights(role, data):
+def parse_disease(value):
+    """cvd / t2d / resp / neuro, or None when the name is not one of the four models."""
+    if not isinstance(value, str):
+        return None
+    return DISEASE_ALIASES.get(" ".join(value.strip().lower().replace("_", " ").split()))
+
+
+def parse_tier(value):
+    """1, "1", "Tier 1" -> 1; None if not a valid tier."""
+    from backend.cdss.fhrs import TIER_KINSHIP
+    if isinstance(value, bool):
+        return None
+    text = str(value).strip().lower().replace("tier", "").strip() if value is not None else ""
+    return int(text) if text.isdigit() and int(text) in TIER_KINSHIP else None
+
+
+def parse_onset(value):
+    """"early", "Early onset", "severe-early" -> spec key; None if unknown."""
+    from backend.cdss.fhrs import ONSET_MULTIPLIER
+    if not isinstance(value, str):
+        return None
+    key = value.strip().lower().replace("onset", "").strip().replace("-", " ").replace(" ", "_").strip("_")
+    return key if key in ONSET_MULTIPLIER else None
+
+
+def validate_family_history(role, data):
     """
-    (relationship_weight, onset_weight) for a family history entry.
-    Patients cannot set weights; clinicians may, within a valid range.
+    One family history entry, with weights looked up from cdss_spec.json (CDSS FHRS Guide).
+    Weights are never taken from the request. Only staff can mark a diagnosis verified:
+    a patient's own report counts as unverified (x0.5) until a doctor confirms it.
     """
-    if role not in STAFF_ROLES:
-        return DEFAULT_RELATIONSHIP_WEIGHT, DEFAULT_ONSET_WEIGHT
-    return (_weight(data, "relationship_weight", DEFAULT_RELATIONSHIP_WEIGHT),
-            _weight(data, "onset_weight", DEFAULT_ONSET_WEIGHT))
+    from backend.cdss.fhrs import ONSET_MULTIPLIER, TIER_KINSHIP
+    bad = []
+    disease = parse_disease(data.get("disease_domain"))
+    tier = parse_tier(data.get("relationship_tier"))
+    onset = parse_onset(data.get("onset_classification"))
+    if disease is None:
+        bad.append("disease_domain")
+    if tier is None:
+        bad.append("relationship_tier")
+    if onset is None:
+        bad.append("onset_classification")
+
+    age = data.get("age_at_diagnosis")
+    if age is not None and (isinstance(age, bool) or not isinstance(age, int) or not 0 <= age <= 120):
+        bad.append("age_at_diagnosis")
+    if bad:
+        raise ValidationError(
+            "Invalid or missing: " + ", ".join(bad) + ". disease_domain is cvd, t2d, resp or neuro; "
+            f"relationship_tier is 1, 2 or 3; onset_classification is one of {', '.join(ONSET_MULTIPLIER)}.", bad)
+
+    diagnosis = data.get("specific_diagnosis")
+    return {
+        "disease_domain": disease,
+        "specific_diagnosis": str(diagnosis).strip()[:150] if diagnosis else disease,
+        "relationship_tier": str(tier),
+        "relationship_weight": TIER_KINSHIP[tier],
+        "onset_classification": onset,
+        "onset_weight": ONSET_MULTIPLIER[onset],
+        "age_at_diagnosis": age,
+        "shared_environment": bool(data.get("shared_environment", False)),
+        "is_verified": role in STAFF_ROLES and data.get("is_verified") is True,
+    }
+
+
+def parse_biological_sex(value):
+    """'female' / ' MALE ' -> 'Female' / 'Male'."""
+    match = next((s for s in SEX_VALUES if isinstance(value, str) and value.strip().lower() == s.lower()), None)
+    if match is None:
+        raise ValidationError("biological_sex must be Female or Male.", ["biological_sex"])
+    return match
+
+
+def validate_hazard(data):
+    """(disease, hazard_code) for an environmental hazard on that disease's fixed list."""
+    from backend.cdss.fhrs import HAZARDS
+    disease = parse_disease(data.get("disease_domain"))
+    if disease is None:
+        raise ValidationError("disease_domain must be cvd, t2d, resp or neuro.", ["disease_domain"])
+    code = data.get("hazard_code")
+    if code not in HAZARDS[disease]:
+        allowed = ", ".join(HAZARDS[disease]) or "none yet"
+        raise ValidationError(f"hazard_code for {disease} must be one of: {allowed}.", ["hazard_code"])
+    return disease, code
 
 
 def _numeric_limit(precision, scale):

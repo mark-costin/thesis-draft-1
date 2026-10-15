@@ -23,6 +23,15 @@ class FeatureMappingTests(unittest.TestCase):
         self.features.normalize_payload("cvd", payload)
         self.assertEqual(payload, {"sbp": 130})
 
+    def test_sex_encoding_follows_the_cdss_dictionary(self):
+        # CDSS_Data_Dictionary.pdf pages 11 and 21: Female (0), Male (1)
+        self.assertEqual(self.features.SEX_ENCODING, {"female": 0, "male": 1})
+        self.assertEqual(self.features.normalize_payload("cvd", {"biological_sex": "Male"})["biological_sex"], 1)
+
+    def test_t2d_and_neuro_database_names_are_renamed(self):
+        self.assertEqual(self.features.normalize_payload("t2d", {"triglycerides": 150}), {"tg": 150})
+        self.assertEqual(self.features.normalize_payload("neuro", {"daily_sleep": 7}), {"sleep_hours": 7})
+
     def test_text_sex_without_configured_encoding_is_an_error(self):
         with patch.object(self.features, "SEX_ENCODING", None):
             with self.assertRaises(self.features.FeatureError):

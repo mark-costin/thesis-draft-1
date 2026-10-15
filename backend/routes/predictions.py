@@ -8,8 +8,10 @@ from flask import Blueprint, jsonify, request
 import backend.cdss.engine as engine
 from backend.audit import log_event
 from backend.biomarker_ranges import out_of_range
-from backend.biomarker_store import latest_biomarkers, patient_exists
+from backend.biomarker_store import patient_exists
+from backend.cdss.feature_builder import build_model_input
 from backend.cdss.features import FeatureError
+from backend.fhrs_store import fhrs_summary, patient_fhrs, record_fhrs
 from backend.middleware.rbac import role_required
 
 log = logging.getLogger(__name__)
@@ -93,13 +95,21 @@ def run_cdss_inference():
     if outside:
         return _error(400, "OUT_OF_RANGE", "; ".join(outside.values()), fields=list(outside))
 
-    # No biomarkers in the request: use the patient's latest stored values for this modality.
-    if not biomarker_payload:
-        stored = latest_biomarkers(modality, patient_id)
-        if not stored:
+    if biomarker_payload:
+        # Values from the request; the FHRS inputs come from the patient's stored family
+        # history unless the request sends them.
+        fhrs = patient_fhrs(patient_id, modality)
+        biomarker_payload = dict(biomarker_payload)
+        biomarker_payload.setdefault(f"adjusted_fhrs_{modality}", fhrs["adjusted_fhrs"])
+        biomarker_payload.setdefault(f"fhrs_band_{modality}", fhrs["band"])
+    else:
+        # No biomarkers in the request: build the model's full input from the database
+        # (latest values, missing-test flags, change since the first record, age, sex, FHRS).
+        built = build_model_input(modality, patient_id)
+        if not built:
             return _error(404, "NO_BIOMARKERS",
                           f"No biomarker_payload sent and no {modality} biomarkers stored for this patient.")
-        biomarker_payload, biomarker_source = stored, "database"
+        biomarker_payload, fhrs, biomarker_source = built["features"], built["fhrs"], "database"
 
     try:
         risk = engine.evaluate_biomarkers(modality, biomarker_payload)
@@ -127,8 +137,9 @@ def run_cdss_inference():
     }
     fairness_dict = _fairness(meta, is_stub)
 
-    # FHRS is not computed by the backend yet; values stay empty until it is.
-    fhrs_dict = {"base_score": None, "environmental_modifier": None, "placeholder": True}
+    # Family History Risk Score (CDSS FHRS Guide), computed from the stored family history.
+    fhrs_dict = {**fhrs_summary(fhrs), "placeholder": False}
+    fhrs_dict["base_score"] = fhrs_dict["bio_fhrs"]          # older name, kept for the frontend
 
     response_payload = {
         "status": "success",
@@ -165,6 +176,7 @@ def run_cdss_inference():
     # not returned: an AI result with no audit trail must not reach a clinician.
     claims = request.current_user
     try:
+        record_fhrs(patient_id, fhrs)          # saved by log_event's commit, or not at all
         response_payload["audit_id"] = log_event(
             "INFERENCE",
             {
@@ -178,6 +190,7 @@ def run_cdss_inference():
                 "tier": tier_val,
                 "missing_features": risk["missing_features"],
                 "drivers": risk["drivers"],
+                "fhrs": fhrs_summary(fhrs),
                 "inference_hash": inf_hash,
             },
             patient_id=patient_id,
