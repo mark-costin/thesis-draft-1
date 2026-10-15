@@ -2,6 +2,7 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+from backend.biomarker_ranges import CHOICES, RANGES
 from backend.biomarkers import (
     column_spec, latest_row, metric_model, patient_exists, row_values, store_biomarkers,
 )
@@ -42,7 +43,8 @@ def store(modality):
     data = request.get_json(silent=True) or {}
     try:
         patient_id = parse_patient_id(data.get("patient_id"))
-        cleaned = validate_biomarkers(column_spec(model), data.get("values"))
+        cleaned = validate_biomarkers(column_spec(model), data.get("values"),
+                                      ranges=RANGES[modality], choices=CHOICES.get(modality))
     except ValidationError as exc:
         return _error(400, "VALIDATION_FAILED", str(exc), fields=exc.fields)
 

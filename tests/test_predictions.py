@@ -125,6 +125,22 @@ class PredictionRouteTests(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.get_json()["code"], "INVALID_FEATURE")
 
+    def test_out_of_range_biomarker_is_rejected_before_the_model_runs(self):
+        # The models were trained on values clipped to the dictionary ranges, so a score
+        # for sbp 900 would be an extrapolation, not a prediction.
+        write_model(self.dir)
+        body = {**PAYLOAD, "biomarker_payload": {"age": 50, "systolic_bp": 900}}
+        r = self.infer(body)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["code"], "OUT_OF_RANGE")
+        self.assertEqual(r.get_json()["fields"], ["systolic_bp"])
+        self.assertEqual(self.audit_events, [])
+
+    def test_boundary_values_are_accepted(self):
+        write_model(self.dir)
+        body = {**PAYLOAD, "biomarker_payload": {"age": 100, "sbp": 70}}
+        self.assertEqual(self.infer(body).status_code, 200)
+
     # --- values come from the trained model's metadata ---------------------
     def test_calibration_is_read_from_model_metadata(self):
         write_model(self.dir)

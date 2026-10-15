@@ -52,7 +52,7 @@ class AiDatabaseTests(unittest.TestCase):
     def setUp(self):
         from backend.cdss.model_loader import ModelRegistry
         from backend.model_orm import AuditLedger, CVDMetrics, Doctor, IdempotencyCache, Patient, T2DMetrics, User
-        from backend.model_orm.clinic_orm import Encounter
+        from backend.model_orm.clinic_orm import Encounter, NeuroMentalMetrics
         import backend.cdss.engine as engine
         self.AuditLedger, self.CVDMetrics, self.Encounter = AuditLedger, CVDMetrics, Encounter
 
@@ -64,7 +64,8 @@ class AiDatabaseTests(unittest.TestCase):
         self.ctx = self.app.app_context()
         self.ctx.push()
         s = self.db.session
-        for model in (AuditLedger, Encounter, CVDMetrics, T2DMetrics, IdempotencyCache, Patient, Doctor, User):
+        for model in (AuditLedger, Encounter, CVDMetrics, T2DMetrics, NeuroMentalMetrics, IdempotencyCache,
+                      Patient, Doctor, User):
             s.query(model).delete()
         s.add_all([
             User(user_id=DOC_USER, username="doc", role="DOCTOR", password_hash="x"),
@@ -129,6 +130,36 @@ class AiDatabaseTests(unittest.TestCase):
         r = self.store(modality="t2d", values={"hba1c": 1000})
         self.assertEqual(r.status_code, 400)
         self.assertIn("hba1c", r.get_json()["fields"])
+
+    def test_value_outside_clinical_range_is_400_naming_the_field(self):
+        # Before: PostgreSQL's CHECK rejected this as a 500 STORE_FAILED ("please retry").
+        r = self.store(modality="t2d", values={"hba1c": 3.5})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["fields"], ["hba1c"])
+        self.assertIn("4.0", r.get_json()["error"])
+
+    def test_cvd_values_are_range_checked_too(self):
+        # Before: the CVD table had no CHECKs, so sbp 900 was stored.
+        r = self.store(values={"sbp": 900})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["fields"], ["sbp"])
+
+    def test_neuro_age_up_to_100_is_stored(self):
+        # The old neuro CHECK stopped at 90; the dictionary allows 100.
+        self.assertEqual(self.store(modality="neuro", values={"age": 95, "phq9": 4}).status_code, 201)
+
+    def test_biological_sex_is_stored_in_dictionary_spelling(self):
+        r = self.store(values={"biological_sex": "female", "sbp": 130})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.get_json()["values"]["biological_sex"], "Female")
+
+    def test_database_rejects_out_of_range_rows_that_skip_the_api(self):
+        # The model carries the same CHECKs as PostgreSQL, so SQLite enforces them here.
+        from sqlalchemy.exc import IntegrityError
+        self.db.session.add(self.CVDMetrics(patient_id=ANA, sbp=900))
+        with self.assertRaises(IntegrityError):
+            self.db.session.commit()
+        self.db.session.rollback()
 
     def test_patient_cannot_store_biomarkers(self):
         r = self.store(user_id=ANA_USER, role="PATIENT")

@@ -1,5 +1,20 @@
+from backend.biomarker_ranges import CHOICES, RANGES
 from backend.dbconnect import db
 from backend.model_orm.clinical_vector import ClinicalVector
+
+
+def _range_checks(table, modality):
+    """
+    CHECK constraints from backend/biomarker_ranges.py, named the way PostgreSQL names
+    them (<table>_<column>_check). create_all() only adds them to NEW tables; existing
+    PostgreSQL tables get them from database/migrations/2026-10-15_biomarker_ranges.sql.
+    """
+    checks = [db.CheckConstraint(f"{col} >= {low} AND {col} <= {high}", name=f"{table}_{col}_check")
+              for col, (low, high, _unit) in RANGES[modality].items()]
+    for col, allowed in CHOICES.get(modality, {}).items():
+        values = ", ".join(f"'{v}'" for v in allowed)
+        checks.append(db.CheckConstraint(f"{col} IN ({values})", name=f"{table}_{col}_check"))
+    return tuple(checks)
 
 # ==============================================================================
 # 1. CORE TRANSACTION & IDEMPOTENCY
@@ -53,6 +68,7 @@ class FHRSStratification(db.Model):
 # ==============================================================================
 class CVDMetrics(db.Model):
     __tablename__ = 'patient_cvd_metrics'
+    __table_args__ = _range_checks('patient_cvd_metrics', 'cvd')
     
     metric_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), nullable=False, index=True)
@@ -85,6 +101,7 @@ class CVDMetrics(db.Model):
 # ==============================================================================
 class T2DMetrics(db.Model):
     __tablename__ = 'patient_t2d_metrics'
+    __table_args__ = _range_checks('patient_t2d_metrics', 't2d')
     
     metric_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), nullable=False, index=True)
@@ -117,6 +134,7 @@ class T2DMetrics(db.Model):
 # ==============================================================================
 class RespiratoryMetrics(db.Model):
     __tablename__ = 'patient_respiratory_metrics'
+    __table_args__ = _range_checks('patient_respiratory_metrics', 'resp')
     
     metric_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), nullable=False, index=True)
@@ -149,6 +167,7 @@ class RespiratoryMetrics(db.Model):
 # ==============================================================================
 class NeuroMentalMetrics(db.Model):
     __tablename__ = 'patient_neuro_mental_metrics'
+    __table_args__ = _range_checks('patient_neuro_mental_metrics', 'neuro')
     
     metric_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     patient_id = db.Column(db.Integer, db.ForeignKey('patients.patient_id', ondelete='CASCADE'), nullable=False, index=True)

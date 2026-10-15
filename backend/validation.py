@@ -125,13 +125,17 @@ def _numeric_limit(precision, scale):
     return 10 ** (precision - scale) - 10 ** (-scale)
 
 
-def validate_biomarkers(spec, values):
+def validate_biomarkers(spec, values, ranges=None, choices=None):
     """
     Check a biomarker payload against a column spec before it reaches the database.
 
     spec maps field -> ("numeric", precision, scale) | ("integer",) | ("string", length);
     precision None means unbounded. Unknown fields, wrong types and values that do not
     fit the column are rejected (instead of a database overflow error). None is dropped.
+
+    ranges maps field -> (minimum, maximum, unit) and choices maps field -> allowed
+    strings (backend/biomarker_ranges.py). Values outside them are rejected with the limits
+    in the message; allowed strings are stored in the spelling given in choices.
     """
     if not isinstance(values, dict):
         raise ValidationError("values must be a JSON object of biomarker fields.", ["values"])
@@ -140,7 +144,8 @@ def validate_biomarkers(spec, values):
     if unknown:
         raise ValidationError(f"Unknown biomarker fields: {', '.join(unknown)}", unknown)
 
-    cleaned, bad = {}, []
+    ranges, choices = ranges or {}, choices or {}
+    cleaned, bad, outside = {}, [], {}
     for field, value in values.items():
         if value is None:
             continue
@@ -150,6 +155,12 @@ def validate_biomarkers(spec, values):
             if not isinstance(value, str) or (length and len(value) > length):
                 bad.append(field)
                 continue
+            if field in choices:
+                match = next((c for c in choices[field] if c.lower() == value.strip().lower()), None)
+                if match is None:
+                    outside[field] = f"{field} must be one of {', '.join(choices[field])} (got {value!r})"
+                    continue
+                value = match
             cleaned[field] = value
             continue
 
@@ -169,8 +180,20 @@ def validate_biomarkers(spec, values):
             continue
         cleaned[field] = value
 
-    if bad:
-        raise ValidationError(f"Invalid value for: {', '.join(bad)} (wrong type or does not fit the column)", bad)
+    # Integers were converted above, so check ranges on what would be stored.
+    from backend.biomarker_ranges import range_message
+    for field in list(cleaned):
+        if field in ranges and spec[field][0] != "string":
+            low, high, unit = ranges[field]
+            if not low <= cleaned[field] <= high:
+                outside[field] = range_message(field, low, high, unit, cleaned.pop(field))
+
+    if bad or outside:
+        parts = []
+        if bad:
+            parts.append(f"Invalid value for: {', '.join(bad)} (wrong type or does not fit the column)")
+        parts.extend(outside.values())
+        raise ValidationError("; ".join(parts), bad + list(outside))
     if not cleaned:
         raise ValidationError("values must contain at least one biomarker.", ["values"])
     return cleaned

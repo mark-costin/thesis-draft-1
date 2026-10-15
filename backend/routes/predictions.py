@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 
 import backend.cdss.engine as engine
 from backend.audit import log_event
+from backend.biomarker_ranges import out_of_range
 from backend.biomarkers import latest_biomarkers, patient_exists
 from backend.cdss.features import FeatureError
 from backend.middleware.rbac import role_required
@@ -19,8 +20,8 @@ MODALITIES = ["cvd", "t2d", "resp", "neuro"]
 FAIRNESS_GAP_THRESHOLD = 0.05  # same threshold as cdss/fairness.py
 
 
-def _error(status_code, code, message):
-    return jsonify({"status": "error", "code": code, "error": message, "retryable": False}), status_code
+def _error(status_code, code, message, **extra):
+    return jsonify({"status": "error", "code": code, "error": message, "retryable": False, **extra}), status_code
 
 
 def _calibration(meta: dict, is_stub: bool) -> dict:
@@ -85,8 +86,14 @@ def run_cdss_inference():
     if not isinstance(biomarker_payload, dict):
         return _error(400, "INVALID_FEATURE", "biomarker_payload must be an object.")
 
-    # No biomarkers in the request: use the patient's latest stored values for this modality.
+    # Values sent with the request must be inside the dictionary ranges the models were
+    # trained on (stored values were already checked when they were saved).
     biomarker_source = "request"
+    outside = out_of_range(modality, biomarker_payload)
+    if outside:
+        return _error(400, "OUT_OF_RANGE", "; ".join(outside.values()), fields=list(outside))
+
+    # No biomarkers in the request: use the patient's latest stored values for this modality.
     if not biomarker_payload:
         stored = latest_biomarkers(modality, patient_id)
         if not stored:
