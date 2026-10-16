@@ -1,7 +1,18 @@
+"""HTTP client for the CDSS Flask backend (all routes in the Frontend API Guide, 2026-10-15).
+
+Every function returns the reply as a dict with "_http_status" added (lists come back
+under "_items"), or None when the backend can't be reached. Pages read replies with
+cdss_logic.is_ok / friendly_error. Nothing here draws on the page.
+"""
 import os
+
 import requests
-import uuid
 import streamlit as st
+
+try:
+    from frontend import cdss_logic
+except ImportError:  # running with frontend/ itself on sys.path
+    import cdss_logic
 
 # ==========================================
 # EXPLICIT API VERSION PINNING (D1)
@@ -10,167 +21,264 @@ API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:5000")
 API_VERSION = "v1"
 BASE_URL = f"{API_BASE}/api/{API_VERSION}"
 
-def _get_standard_headers(patient_id=None, require_idempotency=False):
-    """Constructs headers, providing a dev fallback token and enforcing idempotency caching."""
-    # Use active session token or provide a fallback for testing without full login flow
-    token = st.session_state.get("token", "")
+SESSION_EXPIRED_NOTICE = "Your session ended. Please log in again."
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}"
-    }
-    
-    if require_idempotency and patient_id:
-        sess_token_key = f"encounter_sid_{patient_id}"
-        if sess_token_key not in st.session_state:
-            st.session_state[sess_token_key] = uuid.uuid4().hex[:8]
-        sid = st.session_state[sess_token_key]
-        
-        cache_key = f"idem_key_{patient_id}_{sid}"
-        if cache_key not in st.session_state:
-            st.session_state[cache_key] = str(uuid.uuid4())
-        headers["Idempotency-Key"] = st.session_state[cache_key]
-        
+
+# ==============================================================================
+# CORE REQUEST
+# ==============================================================================
+def _headers(json_body=False, auth=True, idempotency_key=None):
+    headers = {}
+    if json_body:
+        headers["Content-Type"] = "application/json"
+    token = st.session_state.get("token") if auth else None
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
     return headers
 
-def clear_idempotency_key(patient_id: int):
-    """Clears the session token and idempotency key on successful commit or encounter reset."""
-    sess_token_key = f"encounter_sid_{patient_id}"
-    sid = st.session_state.pop(sess_token_key, None)
-    if sid:
-        st.session_state.pop(f"idem_key_{patient_id}_{sid}", None)
 
-def _safe_request(method, url, ignore_404=False, **kwargs):
+def _parse(response):
+    try:
+        body = response.json() if response.content else {}
+    except ValueError:
+        body = None
+    if isinstance(body, list):
+        body = {"_items": body}
+    if body is None:
+        body = {} if response.status_code < 400 else {
+            "status": "error", "code": f"HTTP_{response.status_code}",
+            "error": f"The server replied HTTP {response.status_code}."}
+    body["_http_status"] = response.status_code
+    if str(response.headers.get("X-Idempotent-Replay", "")).lower() == "true":
+        body["_replay"] = True
+    return body
+
+
+def _safe_request(method, path, *, json=None, params=None, auth=True, logout_on_401=True,
+                  idempotency_key=None, timeout=10, base=None):
+    """Send one request. Returns the parsed reply (see module doc) or None if unreachable.
+
+    A 401 on an authenticated call means the token is no longer valid (logout, password
+    change, lock): the login is cleared and the app reruns to the login screen.
     """
-    Safely executes HTTP requests, catching errors and rendering UI alerts instead of crashing.
-    If ignore_404=True, returns None cleanly without triggering an error alert.
-    """
+    url = f"{base or BASE_URL}{path}"
+    kwargs = {"headers": _headers(json is not None, auth, idempotency_key), "timeout": timeout}
+    if json is not None:
+        kwargs["json"] = json
+    if params is not None:
+        kwargs["params"] = params
     try:
         response = requests.request(method, url, **kwargs)
-        
-        # 404 is an expected normal state when checking if a patient has an existing baseline
-        if ignore_404 and response.status_code == 404:
-            return None
-
-        if response.status_code >= 400:
-            try:
-                return response.json()
-            except:
-                return {"status": "error", "message": f"HTTP {response.status_code}"}
-        return response.json() if response.content else {}
-    except requests.exceptions.HTTPError as e:
-        try:
-            error_data = response.json()
-        except Exception:
-            error_data = {"error": str(e), "code": "UNKNOWN_ERROR", "retryable": False}
-        
-        st.error(f"API Error ({response.status_code}): {error_data.get('error', 'Unknown failure')}")
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         return None
-    except requests.exceptions.ConnectionError:
-        st.error("Network Error: Could not connect to the backend server. Is it running on http://127.0.0.1:5000?")
-        return None
-    except requests.exceptions.Timeout:
-        st.error("Network Error: The request timed out.")
+    except requests.exceptions.RequestException:
         return None
 
-def get_baseline(patient_id: int):
-    """
-    GET /api/v1/doctor/patient/<id>/baseline
-    Queries the database for existing baseline. Returns None if 404 (initiates Phase 1).
-    """
-    url = f"{BASE_URL}/doctor/patient/{patient_id}/baseline"
-    headers = _get_standard_headers()
-    headers.pop("Content-Type", None)  # GET requests do not require a content type
-    
-    # Executes a single protected request; returns None cleanly on 404
-    return _safe_request("GET", url, ignore_404=True, headers=headers, timeout=5)
+    reply = _parse(response)
+    if response.status_code == 401 and auth and logout_on_401 and st.session_state.get("token"):
+        cdss_logic.clear_auth_state(st.session_state)
+        st.session_state["auth_notice"] = SESSION_EXPIRED_NOTICE
+        st.rerun()
+    return reply
 
-def infer_cdss(payload: dict):
-    """POST /api/v1/predictions/infer"""
-    url = f"{BASE_URL}/predictions/infer"
-    return _safe_request("POST", url, json=payload, headers=_get_standard_headers(), timeout=15)
 
-def commit_encounter(patient_id: int, payload: dict):
-    """POST /api/v1/doctor/commit-encounter"""
-    url = f"{BASE_URL}/doctor/commit-encounter"
-    headers = _get_standard_headers(patient_id=patient_id, require_idempotency=True)
-    return _safe_request("POST", url, json=payload, headers=headers, timeout=20)
+def _keyed_post(scope, path, body, timeout=15):
+    """POST that creates a record: one Idempotency-Key per save, reused on retry, released on success."""
+    key = cdss_logic.idempotency_key(st.session_state, scope)
+    reply = _safe_request("POST", path, json=body, idempotency_key=key, timeout=timeout)
+    if cdss_logic.is_ok(reply):
+        cdss_logic.release_idempotency_key(st.session_state, scope)
+    return reply
+
+
+def _staff_params(patient_id=None, **extra):
+    """Query string for /patient/... reads: staff send patient_id, a patient sends nothing."""
+    params = {k: v for k, v in extra.items() if v is not None}
+    if patient_id is not None:
+        params["patient_id"] = patient_id
+    return params
+
 
 # ==============================================================================
-# PATIENT PORTAL API METHODS
+# AUTH
 # ==============================================================================
-def get_latest_patient_encounter(patient_id: int):
-    """GET /api/v1/patient/latest-encounter?patient_id=<id>"""
-    url = f"{BASE_URL}/patient/latest-encounter?patient_id={patient_id}"
-    headers = _get_standard_headers()
-    headers.pop("Content-Type", None)
-    return _safe_request("GET", url, headers=headers, timeout=5)
+def perform_backend_logout():
+    """POST /auth/logout (every token of this account stops working)."""
+    return _safe_request("POST", "/auth/logout", json={}, logout_on_401=False, timeout=5)
 
-def get_patient_encounters_list(patient_id: int):
-    """GET /api/v1/patient/encounters?patient_id=<id>"""
-    url = f"{BASE_URL}/patient/encounters?patient_id={patient_id}"
-    headers = _get_standard_headers()
-    headers.pop("Content-Type", None)
-    return _safe_request("GET", url, headers=headers, timeout=5)
-
-def get_patient_family_history(patient_id: int):
-    """GET /api/v1/patient/family-history?patient_id=<id>"""
-    url = f"{BASE_URL}/patient/family-history?patient_id={patient_id}"
-    headers = _get_standard_headers()
-    headers.pop("Content-Type", None)
-    return _safe_request("GET", url, headers=headers, timeout=5)
-
-def submit_patient_family_history(payload: dict):
-    """POST /api/v1/patient/family-history"""
-    url = f"{BASE_URL}/patient/family-history"
-    return _safe_request("POST", url, json=payload, headers=_get_standard_headers(), timeout=10)
-
-def get_active_queue():
-    """GET /api/v1/patient/queue"""
-    url = f"{BASE_URL}/patient/queue"
-    headers = _get_standard_headers()
-    headers.pop("Content-Type", None)
-    return _safe_request("GET", url, headers=headers, timeout=5)
-
-def submit_patient_checkin(payload: dict):
-    """POST /api/v1/patient/queue/checkin"""
-    url = f"{BASE_URL}/patient/queue/checkin"
-    return _safe_request("POST", url, json=payload, headers=_get_standard_headers(), timeout=10)
-
-def cancel_patient_checkin(patient_id: int):
-    import requests
-    import streamlit as st
-    token = st.session_state.get("token", "")
-    base_url = globals().get("BASE_URL", "http://127.0.0.1:5000")
-    try:
-        res = requests.delete(
-            f"{base_url}/api/v1/patient/queue/{patient_id}",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        return res.json() if res.status_code == 200 else {"status": "error"}
-    except Exception:
-        return {"status": "error"}
 
 def change_user_password(current_password: str, new_password: str):
-    """POST /api/v1/auth/change-password"""
-    url = f"{BASE_URL}/auth/change-password"
-    payload = {"current_password": current_password, "new_password": new_password}
-    return _safe_request("POST", url, json=payload, headers=_get_standard_headers(), timeout=10)
+    """POST /auth/change-password. 401 here means a wrong current password, not an expired login."""
+    return _safe_request("POST", "/auth/change-password",
+                         json={"current_password": current_password, "new_password": new_password},
+                         logout_on_401=False)
 
-def perform_backend_logout():
-    """POST /api/v1/auth/logout"""
-    url = f"{BASE_URL}/auth/logout"
-    return _safe_request("POST", url, headers=_get_standard_headers(), timeout=5)
 
 def request_password_reset(identifier: str):
-    """POST /api/v1/auth/forgot-password"""
-    url = f"{BASE_URL}/auth/forgot-password"
-    return _safe_request("POST", url, json={"identifier": identifier},
-                         headers={"Content-Type": "application/json"}, timeout=10)
+    """POST /auth/forgot-password (no login needed)."""
+    return _safe_request("POST", "/auth/forgot-password", json={"identifier": identifier}, auth=False)
+
 
 def reset_password(identifier: str, otp: str, new_password: str):
-    """POST /api/v1/auth/reset-password"""
-    url = f"{BASE_URL}/auth/reset-password"
-    payload = {"identifier": identifier, "otp": otp, "new_password": new_password}
-    return _safe_request("POST", url, json=payload,
-                         headers={"Content-Type": "application/json"}, timeout=10)
+    """POST /auth/reset-password (no login needed)."""
+    return _safe_request("POST", "/auth/reset-password",
+                         json={"identifier": identifier, "otp": otp, "new_password": new_password}, auth=False)
+
+
+# ==============================================================================
+# PATIENT RECORDS AND FHRS INPUTS
+# ==============================================================================
+def get_latest_patient_encounter(patient_id=None):
+    return _safe_request("GET", "/patient/latest-encounter", params=_staff_params(patient_id), timeout=5)
+
+
+def get_patient_encounters_list(patient_id=None):
+    return _safe_request("GET", "/patient/encounters", params=_staff_params(patient_id), timeout=5)
+
+
+def get_patient_family_history(patient_id=None):
+    return _safe_request("GET", "/patient/family-history", params=_staff_params(patient_id), timeout=5)
+
+
+def submit_patient_family_history(payload: dict):
+    """POST /patient/family-history. Build the body with cdss_logic.build_family_history_payload."""
+    return _safe_request("POST", "/patient/family-history", json=payload)
+
+
+def verify_family_history(record_id):
+    return _safe_request("POST", f"/patient/family-history/{record_id}/verify", json={})
+
+
+def get_hazards(patient_id=None):
+    return _safe_request("GET", "/patient/hazards", params=_staff_params(patient_id), timeout=5)
+
+
+def add_hazard(disease_domain, hazard_code, patient_id=None):
+    body = {"disease_domain": disease_domain, "hazard_code": hazard_code}
+    if patient_id is not None:
+        body["patient_id"] = patient_id
+    return _safe_request("POST", "/patient/hazards", json=body)
+
+
+def delete_hazard(hazard_id):
+    return _safe_request("DELETE", f"/patient/hazards/{hazard_id}")
+
+
+def set_biological_sex(patient_id, biological_sex):
+    return _safe_request("POST", "/patient/biological-sex",
+                         json={"patient_id": patient_id, "biological_sex": biological_sex})
+
+
+def get_fhrs(disease, patient_id=None):
+    return _safe_request("GET", "/patient/fhrs", params=_staff_params(patient_id, disease=disease), timeout=5)
+
+
+# ==============================================================================
+# CLINIC QUEUE
+# ==============================================================================
+def get_active_queue():
+    """GET /patient/queue (a patient gets only their own ticket)."""
+    return _safe_request("GET", "/patient/queue", timeout=5)
+
+
+def submit_patient_checkin(payload: dict):
+    return _safe_request("POST", "/patient/queue/checkin", json=payload)
+
+
+def cancel_patient_checkin(patient_id):
+    """DELETE /patient/queue/<patient_id> (kept as history, status CANCELLED)."""
+    return _safe_request("DELETE", f"/patient/queue/{patient_id}")
+
+
+def get_doctor_queue():
+    """GET /doctor/queue: {status, queue: [...]}, today's WAITING tickets."""
+    return _safe_request("GET", "/doctor/queue", timeout=5)
+
+
+# ==============================================================================
+# BIOMARKERS AND AI
+# ==============================================================================
+def save_biomarkers(modality, patient_id, values):
+    """POST /biomarkers/<modality> with that disease table's column names."""
+    return _keyed_post(f"biomarkers:{modality}:{patient_id}", f"/biomarkers/{modality}",
+                       {"patient_id": patient_id, "values": values})
+
+
+def get_latest_biomarkers(modality, patient_id=None):
+    return _safe_request("GET", f"/biomarkers/{modality}/latest", params=_staff_params(patient_id), timeout=5)
+
+
+def infer_cdss(patient_id, modality):
+    """POST /predictions/infer. No biomarker_payload: the backend builds the input from stored data."""
+    return _safe_request("POST", "/predictions/infer", json={"patient_id": patient_id, "modality": modality},
+                         timeout=20)
+
+
+def get_models_status():
+    return _safe_request("GET", "/predictions/models/status", timeout=5)
+
+
+def reload_models():
+    return _safe_request("POST", "/predictions/models/reload", json={}, timeout=30)
+
+
+# ==============================================================================
+# DOCTOR WORKFLOW
+# ==============================================================================
+def get_doctor_patient(patient_id):
+    return _safe_request("GET", f"/doctor/patient/{patient_id}", timeout=5)
+
+
+def get_baseline(patient_id):
+    """GET /doctor/patient/<id>/baseline. 404 {has_baseline: false} means 'start intake', not an error."""
+    return _safe_request("GET", f"/doctor/patient/{patient_id}/baseline", timeout=5)
+
+
+def save_consultation(patient_id, directives, notes=""):
+    return _keyed_post(f"consultation:{patient_id}", "/doctor/consultation",
+                       {"patient_id": patient_id, "directives": directives, "notes": notes})
+
+
+def get_consultations(patient_id):
+    return _safe_request("GET", f"/doctor/patient/{patient_id}/consultations", timeout=5)
+
+
+def commit_encounter(patient_id, payload: dict):
+    """POST /doctor/commit-encounter. Build the body with cdss_logic.build_commit_payload."""
+    return _keyed_post(f"commit:{patient_id}", "/doctor/commit-encounter", payload, timeout=20)
+
+
+def clear_idempotency_key(patient_id):
+    """Start a fresh commit (e.g. after switching patient)."""
+    cdss_logic.release_idempotency_key(st.session_state, f"commit:{patient_id}")
+
+
+def verify_encounter(encounter_uid):
+    return _safe_request("GET", f"/doctor/encounter/{encounter_uid}/verify", timeout=5)
+
+
+# ==============================================================================
+# ADMIN
+# ==============================================================================
+def get_directory():
+    return _safe_request("GET", "/admin/directory", timeout=5)
+
+
+def provision_doctor(payload: dict):
+    """POST /admin/provision. Build the body with cdss_logic.build_provision_payload."""
+    return _keyed_post("provision", "/admin/provision", payload)
+
+
+def verify_doctor(doctor_id):
+    return _safe_request("POST", f"/admin/doctors/{doctor_id}/verify", json={})
+
+
+def unlock_user(user_id):
+    return _safe_request("POST", f"/admin/users/{user_id}/unlock", json={})
+
+
+def get_health():
+    """GET /api/health/db (outside /api/v1): server and database status."""
+    return _safe_request("GET", "/api/health/db", auth=False, base=API_BASE, timeout=5)

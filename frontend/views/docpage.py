@@ -1,117 +1,78 @@
-import sys
 import os
-import json
-import uuid
-import time
+import sys
 import textwrap
+import uuid
 from datetime import datetime, timezone
+
 import pandas as pd
-import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
 # ==============================================================================
-# 1. ADD PARENT PATH & IMPORT API CLIENT & SHARED UI
+# 1. PATHS, SHARED UI, API CLIENT
 # ==============================================================================
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in (os.path.abspath(os.path.join(_HERE, "..")), os.path.abspath(os.path.join(_HERE, "..", ".."))):
+    if _p not in sys.path:
+        sys.path.append(_p)
 
 try:
-    from styles import basetab_layout_, render_top_navbar
+    from styles import basetab_layout_, render_top_navbar, render_fhrs_panel, show_api_error, flash, show_flash
 except ImportError:
-    from views.styles import basetab_layout_, render_top_navbar
+    from views.styles import basetab_layout_, render_top_navbar, render_fhrs_panel, show_api_error, flash, show_flash
 
-# Wire in the API Client
-try:
-    import docpage_api
-except ImportError:
-    from frontend import docpage_api
+from frontend import cdss_logic as L
+from frontend import docpage_api
 
 # ==============================================================================
-# 2. PAGE SETUP & THEME INITIALIZATION
+# 2. PAGE SETUP
 # ==============================================================================
-st.set_page_config(layout="wide", page_title="Lucerna Medica | Clinician Workspace")
+st.set_page_config(layout="wide", page_title="HEART | Clinician Workspace")
 basetab_layout_()
+st.markdown("<style>[data-testid='stToolbar'] {visibility: hidden;}</style>", unsafe_allow_html=True)
 
-st.markdown("""
-    <style>
-        [data-testid="stToolbar"] {visibility: hidden;}
-    </style>
-""", unsafe_allow_html=True)
-
-# ==============================================================================
-# 3. GLOBAL SESSION STATE
-# ==============================================================================
-SCHEMA_VERSION = "1.0.0"
-MODEL_VERSION  = "xgb-multitask-v1.2.0"
-
-if "user_profile" not in st.session_state:
-    st.session_state.user_profile = {
-        "first_name": "Sarah", "last_name": "Jenkins", "suffix": "MD",
-        "license_number": "PRC-123456", "hospital_affiliation": "Lucerna Medica",
-        "specialization": "Cardiology", "email": "s.jenkins@lucernamedica.com"
-    }
-
-profile = st.session_state.user_profile
-active_doc = {
-    "name": f"Dr. {profile.get('first_name', 'System')} {profile.get('last_name', 'Clinician')}".strip(),
-    "suffix": profile.get("suffix", "MD"),
-    "role": "ATTENDING CLINICIAN",
-    "prc": profile.get("license_number", "PRC Pending"),
-    "affiliation": profile.get("hospital_affiliation", "Lucerna Medica"),
-    "specialty": profile.get("specialization", "Cardiology"),
-    "email": profile.get("email", "doctor@lucernamedica.com"),
-    "icon": "🩺",
-    "badge_bg": "#f1f5f9", "badge_fg": "#0f172a",
-    "default_modality": "Cardiovascular Diseases (Hypertension / CVD)"
-}
-
-spec_upper = active_doc["specialty"].upper()
-if "CARDIO" in spec_upper:
-    active_doc.update({"icon": "🫀", "badge_bg": "#fee2e2", "badge_fg": "#ef4444", "default_modality": "Cardiovascular Diseases (Hypertension / CVD)"})
-elif "ENDOCRIN" in spec_upper or "DIABET" in spec_upper:
-    active_doc.update({"icon": "🩸", "badge_bg": "#fef3c7", "badge_fg": "#d97706", "default_modality": "Type 2 Diabetes Mellitus"})
-elif "PULMON" in spec_upper or "RESPIR" in spec_upper:
-    active_doc.update({"icon": "🫁", "badge_bg": "#e0f2fe", "badge_fg": "#0284c7", "default_modality": "Chronic Respiratory Diseases (COPD & Asthma)"})
-elif "NEURO" in spec_upper or "PSYCH" in spec_upper:
-    active_doc.update({"icon": "🧠", "badge_bg": "#ede9fe", "badge_fg": "#7c3aed", "default_modality": "Mental Health & Neurological Disorders"})
-
-if "active_modality" not in st.session_state: st.session_state.active_modality = active_doc["default_modality"]
-
-if "patient_directory" not in st.session_state: st.session_state.patient_directory = []
-if "today_queue" not in st.session_state: st.session_state.today_queue = []
-
-# FIXED: Dev-test-token to bypass auth blocks during testing
-if "token" not in st.session_state or not st.session_state["token"]:
+if not st.session_state.get("token"):
     st.warning("Session expired. Please log in.")
     st.stop()
 
-_DEFAULT_STATE = {
-    "active_patient": None,
-    "ai_inference_completed": False,
-    "cdss_inference_payload": None,
-    "fhrs_data": pd.DataFrame(columns=["Disease Category", "Relative Relationship", "Age of Onset"]),
-    "env_factors": [],
-    "audit_trail": []
+# ==============================================================================
+# 3. LOGGED-IN DOCTOR (profile comes from /auth/login; nothing invented)
+# ==============================================================================
+profile = st.session_state.get("user_profile") or {}
+_first, _last = (profile.get("first_name") or "").strip(), (profile.get("last_name") or "").strip()
+active_doc = {
+    "name": f"Dr. {_first} {_last}".strip() if (_first or _last) else st.session_state.get("username", "Clinician"),
+    "suffix": profile.get("suffix") or "",
+    "prc": profile.get("license_number") or "License not on file",
+    "affiliation": profile.get("hospital_affiliation") or "Lucerna Medica",
+    "specialty": profile.get("specialization") or "General Practice",
+    "icon": "🩺", "badge_fg": "#0f172a", "default_modality": "cvd",
 }
-for key, default in _DEFAULT_STATE.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
+_spec = active_doc["specialty"].upper()
+if "CARDIO" in _spec:
+    active_doc.update({"icon": "🫀", "badge_fg": "#ef4444", "default_modality": "cvd"})
+elif "ENDOCRIN" in _spec or "DIABET" in _spec:
+    active_doc.update({"icon": "🩸", "badge_fg": "#d97706", "default_modality": "t2d"})
+elif "PULMON" in _spec or "RESPIR" in _spec:
+    active_doc.update({"icon": "🫁", "badge_fg": "#0284c7", "default_modality": "resp"})
+elif "NEURO" in _spec or "PSYCH" in _spec:
+    active_doc.update({"icon": "🧠", "badge_fg": "#7c3aed", "default_modality": "neuro"})
 
-mod_map = {
-    "Cardiovascular (CVD)": "Cardiovascular Diseases (Hypertension / CVD)",
-    "Type 2 Diabetes": "Type 2 Diabetes Mellitus",
-    "COPD (Pulmonary)": "Chronic Respiratory Diseases (COPD & Asthma)",
-    "Mental Health / Neuro": "Mental Health & Neurological Disorders"
-}
-mod_map_rev = {v: k for k, v in mod_map.items()}
+for _key, _default in {"active_patient_id": None, "last_inference": None, "last_inference_pid": None,
+                       "last_inference_modality": None, "last_commit_receipt": None, "last_commit_pid": None,
+                       "audit_trail": []}.items():
+    st.session_state.setdefault(_key, _default)
 
-def _sync_from_tab2():
-    st.session_state.active_modality = mod_map.get(st.session_state.modality_switcher, "Cardiovascular Diseases (Hypertension / CVD)")
 
-def _sync_from_tab3():
-    st.session_state.active_modality = st.session_state.cdss_active_modality_selector
+def open_patient(patient_id):
+    """Switch the CDSS workspace to another patient and forget the previous patient's result."""
+    st.session_state["active_patient_id"] = int(patient_id)
+    st.session_state["last_inference"] = None
+    st.session_state["last_inference_pid"] = None
+    st.session_state["last_inference_modality"] = None
 
-def append_audit(event_type: str, payload: dict) -> None:
+
+def append_audit(event_type, payload):
     st.session_state["audit_trail"].append({
         "audit_id": f"AUD-{uuid.uuid4().hex[:6].upper()}",
         "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -119,465 +80,485 @@ def append_audit(event_type: str, payload: dict) -> None:
         "payload": payload,
     })
 
+
+# Today's waiting tickets (GET /doctor/queue -> {"status", "queue": [...]})
+queue_resp = docpage_api.get_doctor_queue()
+queue = L.queue_tickets(queue_resp)
+
 # ==============================================================================
-# 4. WORKSPACE RENDER
+# 4. WORKSPACE
 # ==============================================================================
 _, col_main, _ = st.columns([5, 90, 5], gap="small")
 
 with col_main:
     render_top_navbar(
-        user_name=f"{active_doc['name']}, {active_doc['suffix']}", 
-        user_role=f"{active_doc['role']} | ✔ {active_doc['prc']}", 
-        user_email=f"Affiliation: {active_doc['affiliation']} • Active Queue: {len(st.session_state.today_queue)}",
+        user_name=f"{active_doc['name']}{', ' + active_doc['suffix'] if active_doc['suffix'] else ''}",
+        user_role=f"ATTENDING CLINICIAN | ✔ {active_doc['prc']}",
+        user_email=f"Affiliation: {active_doc['affiliation']} • Waiting now: {len(queue)}",
         badge_label=f"{active_doc['icon']} {active_doc['specialty']}",
-        badge_color=active_doc["badge_fg"]
+        badge_color=active_doc["badge_fg"],
     )
 
     tab_overview, tab_queue, tab_cdss = st.tabs(["Overview Dashboard", "Live Patients & Triage", "AI Diagnostics & CDSS"])
 
+    # --------------------------------------------------------------------------
+    # TAB 1: OVERVIEW (live queue size + which disease models the server loaded)
+    # --------------------------------------------------------------------------
     with tab_overview:
         st.write("")
+        models_resp = docpage_api.get_models_status()
+        model_rows = L.models_status_rows(models_resp)
         with st.container(border=True):
-            st.markdown(textwrap.dedent("""
-            <div style="margin-bottom: 16px;">
-                <h3 style="margin: 0; font-size: 1.45rem; font-weight: 700;">Clinical Telemetry & Disease Velocity</h3>
-                <p style="margin: 4px 0 0 0; font-size: 0.95rem;">Real-time epidemiological footprint and acute patient influx tracking.</p>
-            </div>
-            """), unsafe_allow_html=True)
-            st.info("Overview metrics connected to live PostgreSQL telemetry via backend services.")
+            st.markdown("### Clinic status")
+            m1, m2 = st.columns(2)
+            m1.metric("Patients waiting today", len(queue) if L.is_ok(queue_resp) else "—")
+            m2.metric("Disease models loaded", f"{sum(r['loaded'] for r in model_rows)} / 4" if model_rows else "—")
+            if not L.is_ok(models_resp):
+                show_api_error(models_resp)
+            elif model_rows:
+                st.dataframe(pd.DataFrame([{
+                    "Disease": L.MODALITY_LABELS[r["disease"]],
+                    "Loaded": "🟢 Yes" if r["loaded"] else "🔴 No (stub)",
+                    "Model version": r["model_version"] or "—",
+                    "Notes": r["problem"] or "; ".join(r["warnings"]) or "—",
+                } for r in model_rows]), hide_index=True, use_container_width=True)
+                if not all(r["loaded"] for r in model_rows):
+                    st.warning("A disease without a loaded model returns no prediction until the server loads it.")
 
+    # --------------------------------------------------------------------------
+    # TAB 2: TODAY'S QUEUE
+    # --------------------------------------------------------------------------
     with tab_queue:
         st.write("")
         st.markdown("### Today's Active Triage Queue")
-        st.caption("Live patient check-in tickets synchronized with the triage ledger.")
-
-        # Sync queue from backend
-        backend_q = docpage_api.get_active_queue()
-        if backend_q and "queue" in backend_q:
-            st.session_state.today_queue = backend_q["queue"]
-
-        if not st.session_state.today_queue:
+        st.caption("Waiting tickets in check-in order. A ticket closes when you save a consultation.")
+        if not L.is_ok(queue_resp):
+            show_api_error(queue_resp)
+        elif not queue:
             st.info("The waiting room is currently empty. Patients will appear here upon pre-check-in.")
         else:
-            for item in st.session_state.today_queue:
+            for item in queue:
                 with st.container(border=True):
                     qc1, qc2, qc3, qc4 = st.columns([1, 3, 3, 2])
-                    q_ticket = item.get("queue_no", "--")
-                    qc1.markdown(f"### 🎫 {q_ticket}")
+                    qc1.markdown(f"### 🎫 {item.get('queue_no', '--')}")
                     with qc2:
                         st.markdown(f"**{item.get('name', 'Patient')}** (PID #{item.get('patient_id', '--')})")
-                        st.caption(f"Arrival: {item.get('time_in', '--')} | Priority: {item.get('urgency', 'Routine')}")
+                        st.caption(f"Arrival: {item.get('time_in', '--')} | Priority: {item.get('urgency', 'Routine')} | "
+                                   f"{item.get('lifecycle_status', item.get('status', ''))}")
                     with qc3:
-                        st.markdown(f"**Complaint:** {item.get('complaint', 'Checkup')}")
-                        st.caption(f"Vitals: {item.get('vitals', 'N/A')}")
+                        st.markdown(f"**Complaint:** {item.get('complaint', '—')}")
+                        st.caption(f"Vitals: {item.get('vitals', 'N/A')} | Watch: {item.get('watch_flag', '—')}")
                     with qc4:
-                        qid = item.get('patient_id')
+                        qid = item.get("patient_id")
                         if st.button("🩺 Call to Consult", key=f"call_q_{qid}", type="primary", use_container_width=True):
-                            st.session_state.active_patient = {
-                                "id": qid, "name": item.get("name", f"Patient #{qid}"), "age": 52, "sex": "Female",
-                                "bmi": 27.2, "resting_hr": 74, "latest_bp": "138/88"
-                            }
-                            st.success(f"Loaded {item.get('name')} into CDSS suite.")
+                            open_patient(qid)
+                            st.session_state["consult_pid_input"] = int(qid)  # widget not drawn yet in this run
+                            st.session_state["cdss_notice"] = f"Loaded {item.get('name', 'patient')} into the CDSS tab."
                             st.rerun()
 
     # --------------------------------------------------------------------------
-    # TAB 3: AI DIAGNOSTICS & CDSS (WIRED TO docpage_api.py)
+    # TAB 3: CDSS WORKSPACE
     # --------------------------------------------------------------------------
+    def render_results(resp, disease_label):
+        s = L.summarize_inference(resp)
+        if s["is_stub"]:
+            st.warning(f"The {disease_label} model is not loaded on the server (stub), so no prediction is shown. "
+                       "Check Overview → Disease models loaded.")
+            return
+        if not s["show_result"]:
+            st.warning("The backend returned no risk score for this run.")
+            return
+
+        color = L.tier_color(s["tier"])
+        col_gauge, col_chart = st.columns([1, 1.5])
+        with col_gauge:
+            st.markdown(f"<div class='tier-badge' style='text-align:center;font-weight:700;color:{color};'>"
+                        f"{s['tier']} RISK</div>", unsafe_allow_html=True)
+            fig_gauge = go.Figure(go.Indicator(
+                mode="gauge+number", value=s["score"],
+                number={"suffix": "%", "font": {"size": 42, "color": color}},
+                gauge={"axis": {"range": [0, 100]}, "bar": {"color": color}},
+            ))
+            fig_gauge.update_layout(height=240, margin=dict(l=20, r=20, t=20, b=10))
+            st.plotly_chart(fig_gauge, use_container_width=True, config={"displayModeBar": False})
+            st.caption(f"Inputs built from: {s['source'] or '—'}")
+        with col_chart:
+            st.markdown("##### What drove this result (TreeSHAP)")
+            if s["drivers"]:
+                names = [n for n, _ in reversed(s["drivers"])]
+                values = [v for _, v in reversed(s["drivers"])]
+                fig_bar = go.Figure(go.Bar(
+                    x=values, y=names, orientation="h",
+                    marker=dict(color=["#ef4444" if v > 0 else "#10b981" for v in values]),
+                    text=[f"{v:+.3f}" for v in values], textposition="outside"))
+                fig_bar.update_layout(height=260, margin=dict(l=10, r=40, t=10, b=10),
+                                      xaxis_title="SHAP value (log-odds): right raises risk, left lowers it")
+                st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+            else:
+                st.caption("The backend returned no SHAP drivers for this run.")
+
+        if s["missing_features"]:
+            st.warning("Based on incomplete data. Inputs the model did not get: " + ", ".join(s["missing_features"]))
+
+        render_fhrs_panel(s["fhrs"], title="Family-history risk used in this prediction")
+
+        st.markdown("##### Fairness and calibration (from training)")
+        fair = s["fairness"]
+        if fair.get("disparity_detected"):
+            st.warning(f"Subgroup AUROC gap {fair.get('gap')} is above the {fair.get('threshold', 0.05)} fairness "
+                       "threshold in training cross-validation. Interpret this result with care.")
+        elif fair:
+            st.success(f"Subgroup gap {fair.get('gap', '—')} is within the {fair.get('threshold', 0.05)} threshold.")
+        cal = s["calibration"]
+        if cal:
+            st.caption(f"Calibration: {cal.get('method', '—')} · Brier {cal.get('brier_score', '—')} · ECE {cal.get('ece', '—')}")
+        if s["trace"]:
+            st.caption(" · ".join(f"{k}: {v}" for k, v in s["trace"].items()))
+        with st.expander("Raw reply from POST /predictions/infer"):
+            st.json(L.strip_meta(resp))
+
+    def biomarker_input(field, code, pid):
+        key = f"bm_{code}_{field['column']}_{pid}"
+        hint = f" · {field['min']}–{field['max']}" if field["min"] is not None else ""
+        label = f"{field['label']}{' (' + field['unit'] + ')' if field['unit'] else ''}{hint}"
+        if field["kind"] == "flag":
+            choice = st.selectbox(label, ["Not recorded", "No", "Yes"], key=key)
+            return {"Not recorded": None, "No": 0, "Yes": 1}[choice]
+        if field["kind"] == "int":
+            return st.number_input(label, value=None, step=1, key=key)
+        return st.number_input(label, value=None, step=float(field["step"]), key=key)
+
+    def render_workspace(pid, info_col):
+        prof_resp = docpage_api.get_doctor_patient(pid)
+        prof = L.patient_profile(prof_resp)
+        if prof is None:
+            with info_col:
+                show_api_error(prof_resp)
+            return
+        header = L.patient_header(dict(prof, patient_id=prof.get("patient_id", pid)))
+
+        baseline_resp = docpage_api.get_baseline(pid)
+        phase = L.baseline_phase(baseline_resp)
+
+        with info_col:
+            st.markdown(f"### Active Consultation: **{header['name']}** (`PID-{pid}`)")
+            st.caption(f"Age: {header['age'] if header['age'] is not None else '—'} | Sex: {header['sex']} | "
+                       f"Date of birth: {header['dob'] or '—'}")
+
+        if phase is None:
+            show_api_error(baseline_resp)
+            st.warning("Could not check whether this patient has a baseline. Encounters can't be committed until it loads.")
+        else:
+            if phase == 1:
+                title, desc, bg, border = ("Phase 1 · Baseline intake",
+                                           "No sealed baseline yet. This visit's encounter becomes the patient's baseline.",
+                                           "#e0f2fe", "#0284c7")
+            else:
+                title, desc, bg, border = ("Phase 2 · Follow-up",
+                                           f"Baseline sealed {baseline_resp.get('established_at_utc', '')}. "
+                                           "This visit is saved as a follow-up linked to it.", "#ede9fe", "#7c3aed")
+            st.markdown(textwrap.dedent(f"""
+                <div style="padding: 15px; border-radius: 8px; background: {bg}; border-left: 5px solid {border}; margin: 10px 0 18px 0;">
+                    <h4 style="margin: 0; color: #0f172a;">{title}</h4>
+                    <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #475569;">{desc}</p>
+                </div>"""), unsafe_allow_html=True)
+
+        # Biological sex (POST /patient/biological-sex; all four models read it)
+        with st.container(border=True):
+            sx1, sx2 = st.columns([3, 1], vertical_alignment="bottom")
+            current_sex = prof.get("biological_sex")
+            sex_options = ["Female", "Male"]
+            sex_choice = sx1.selectbox("Biological sex (used by all four models)", sex_options,
+                                       index=sex_options.index(current_sex) if current_sex in sex_options else None,
+                                       placeholder="Not set", key=f"sex_pick_{pid}")
+            if sx2.button("Save sex", key="sex_save_btn", use_container_width=True,
+                          disabled=sex_choice is None or sex_choice == current_sex):
+                resp = docpage_api.set_biological_sex(pid, sex_choice)
+                if L.is_ok(resp):
+                    flash("success", f"Biological sex saved as {sex_choice}.")
+                    st.rerun()
+                show_api_error(resp)
+
+        codes = list(L.MODALITY_LABELS)
+        code = st.selectbox("Disease to evaluate*", codes, format_func=L.MODALITY_LABELS.get,
+                            index=codes.index(active_doc["default_modality"]), key="cdss_modality")
+        disease_label = L.MODALITY_LABELS[code]
+
+        # ---------------- 1 · Family history -----------------------------------
+        with st.container(border=True):
+            st.markdown("#### 1 · Family history (FHRS inputs)")
+            st.caption("Send tier and onset only: the backend applies the FHRS weights. "
+                       "Unverified relatives count half until you verify them.")
+            fh_resp = docpage_api.get_patient_family_history(pid)
+            if not L.is_ok(fh_resp):
+                show_api_error(fh_resp)
+            else:
+                relatives = fh_resp.get("family_history") or []
+                if not relatives:
+                    st.info("No relatives recorded yet.")
+                for rel in relatives:
+                    r1, r2, r3, r4 = st.columns([3, 3, 2, 1.4], vertical_alignment="center")
+                    r1.markdown(f"**{L.DISEASE_CHOICES.get(rel.get('disease_domain'), rel.get('disease_domain'))}**"
+                                f"{' · ' + rel['specific_diagnosis'] if rel.get('specific_diagnosis') else ''}")
+                    r2.caption(f"{L.TIER_LABELS.get(rel.get('relationship_tier'), rel.get('relationship_tier'))} · "
+                               f"onset {L.ONSET_LABELS.get(rel.get('onset_classification'), rel.get('onset_classification'))}"
+                               f"{' · age ' + str(rel['age_at_diagnosis']) if rel.get('age_at_diagnosis') is not None else ''}"
+                               f"{' · same household' if rel.get('shared_environment') else ''}")
+                    r3.markdown("🟢 Verified" if rel.get("is_verified") else "🟡 Unverified (×0.5)")
+                    if not rel.get("is_verified"):
+                        if r4.button("Verify", key=f"fh_verify_{rel.get('record_id')}", use_container_width=True):
+                            resp = docpage_api.verify_family_history(rel.get("record_id"))
+                            if L.is_ok(resp):
+                                flash("success", "Relative verified. It now counts fully in the FHRS.")
+                                st.rerun()
+                            show_api_error(resp)
+
+            with st.form(f"fh_form_{pid}", clear_on_submit=True):
+                st.markdown("**Add a relative**")
+                f1, f2, f3 = st.columns(3)
+                fh_codes = list(L.DISEASE_CHOICES)
+                fh_disease = f1.selectbox("Disease", fh_codes, format_func=L.DISEASE_CHOICES.get,
+                                          index=fh_codes.index(code), key=f"fh_disease_{pid}")
+                fh_tier = f2.selectbox("Relationship", list(L.TIER_CHOICES), key=f"fh_tier_{pid}")
+                fh_onset = f3.selectbox("Age of onset", list(L.ONSET_CHOICES), key=f"fh_onset_{pid}")
+                g1, g2 = st.columns(2)
+                fh_diag = g1.text_input("Specific diagnosis (optional)", key=f"fh_diag_{pid}")
+                fh_age = g2.number_input("Age at diagnosis (optional)", min_value=0, max_value=120, value=None, step=1,
+                                         key=f"fh_age_{pid}")
+                fh_shared = st.checkbox("Lived in the same household", key=f"fh_shared_{pid}")
+                fh_verified = st.checkbox("Diagnosis confirmed from records (verified)", key=f"fh_verified_{pid}")
+                if st.form_submit_button("Save relative"):
+                    try:
+                        payload = L.build_family_history_payload(
+                            fh_disease, L.TIER_CHOICES[fh_tier], L.ONSET_CHOICES[fh_onset],
+                            specific_diagnosis=fh_diag, age_at_diagnosis=fh_age, shared_environment=fh_shared,
+                            is_verified=fh_verified, patient_id=pid)
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        resp = docpage_api.submit_patient_family_history(payload)
+                        if L.is_ok(resp):
+                            flash("success", "Relative saved.")
+                            st.rerun()
+                        show_api_error(resp)
+
+            fhrs_resp = docpage_api.get_fhrs(code, pid)
+            if L.is_ok(fhrs_resp):
+                render_fhrs_panel(L.fhrs_view(fhrs_resp.get("fhrs")), title=f"FHRS for {disease_label}")
+            else:
+                show_api_error(fhrs_resp)
+
+        # ---------------- 2 · Household hazards ---------------------------------
+        with st.container(border=True):
+            st.markdown("#### 2 · Shared household hazards")
+            hz_resp = docpage_api.get_hazards(pid)
+            if not L.is_ok(hz_resp):
+                show_api_error(hz_resp)
+            else:
+                hazards = hz_resp.get("hazards") or []
+                catalogue = hz_resp.get("catalogue") or {}
+                cat_labels = {h.get("code"): h for h in catalogue.get(code, [])}
+                for hz in L.recorded_hazards(hazards, code):
+                    h1, h2 = st.columns([5, 1], vertical_alignment="center")
+                    info = cat_labels.get(hz.get("hazard_code"), {})
+                    h1.markdown(f"• {hz.get('label') or info.get('label') or hz.get('hazard_code')}"
+                                f"{' (+' + str(info['e_j']) + ')' if info.get('e_j') is not None else ''}")
+                    if h2.button("Remove", key=f"hz_del_{hz.get('id')}", use_container_width=True):
+                        resp = docpage_api.delete_hazard(hz.get("id"))
+                        if L.is_ok(resp):
+                            flash("success", "Hazard removed.")
+                            st.rerun()
+                        show_api_error(resp)
+                choices = L.hazard_choices(catalogue, code, hazards)
+                if not catalogue.get(code):
+                    st.caption(f"No household hazards are defined for {disease_label}.")
+                elif not choices:
+                    st.caption("Every hazard in the catalogue for this disease is already recorded.")
+                else:
+                    p1, p2 = st.columns([5, 1], vertical_alignment="bottom")
+                    pick = p1.selectbox(
+                        "Add a hazard from the catalogue", choices, key=f"hz_pick_{code}_{pid}",
+                        format_func=lambda h: f"{h.get('label', h.get('code'))} (+{h.get('e_j')})"
+                                              f"{' · ' + h['status'] if h.get('status') else ''}")
+                    if p2.button("Add hazard", key="hz_add_btn", use_container_width=True):
+                        resp = docpage_api.add_hazard(code, pick["code"], patient_id=pid)
+                        if L.is_ok(resp):
+                            flash("success", "Hazard recorded.")
+                            st.rerun()
+                        show_api_error(resp)
+
+        # ---------------- 3 · Biomarkers -----------------------------------------
+        with st.container(border=True):
+            st.markdown(f"#### 3 · Biomarkers — {disease_label}")
+            latest = docpage_api.get_latest_biomarkers(code, pid)
+            if L.is_ok(latest):
+                labels = {f["column"]: f["label"] for f in L.BIOMARKER_FIELDS[code]}
+                st.caption(f"Latest stored record #{latest.get('metric_id')} · {latest.get('recorded_at', '')}")
+                values = latest.get("values") or {}
+                if values:
+                    st.dataframe(pd.DataFrame([{"Measurement": labels.get(k, k), "Value": v}
+                                               for k, v in values.items() if v is not None]),
+                                 hide_index=True, use_container_width=True)
+            elif (L.error_info(latest) or {}).get("code") == "NO_BIOMARKERS" or (latest or {}).get("_http_status") == 404:
+                st.info("No biomarkers stored for this disease yet.")
+            else:
+                show_api_error(latest)
+
+            with st.form(f"bm_form_{code}_{pid}"):
+                st.caption("Leave a test empty when it was not done. The server checks every value against the "
+                           "data-dictionary range and names any value outside it.")
+                entered = {}
+                fields = L.BIOMARKER_FIELDS[code]
+                with st.expander("Used by the model", expanded=True):
+                    cols = st.columns(2)
+                    for i, field in enumerate([f for f in fields if f["model_input"]]):
+                        with cols[i % 2]:
+                            entered[field["column"]] = biomarker_input(field, code, pid)
+                with st.expander("Other measurements (stored, not used by this model)", expanded=False):
+                    cols = st.columns(2)
+                    for i, field in enumerate([f for f in fields if not f["model_input"]]):
+                        with cols[i % 2]:
+                            entered[field["column"]] = biomarker_input(field, code, pid)
+                if st.form_submit_button("Save biomarkers"):
+                    values = L.clean_biomarker_values(entered)
+                    if not values:
+                        st.error("Enter at least one value.")
+                    else:
+                        resp = docpage_api.save_biomarkers(code, pid, values)
+                        if L.is_ok(resp):
+                            flash("success", f"Biomarkers saved (record #{resp.get('metric_id')}).")
+                            st.rerun()
+                        show_api_error(resp, disease=code)
+
+        # ---------------- 4 · Run the model ---------------------------------------
+        with st.container(border=True):
+            st.markdown("#### 4 · Diagnostic Risk Assessment")
+            st.caption("The server builds the model input from the stored biomarkers, family history, hazards, "
+                       "age and sex, and writes an audit entry for every run.")
+            if st.button("🧠 Run the model", key="run_model_btn", type="primary", use_container_width=True):
+                resp = docpage_api.infer_cdss(pid, code)
+                if L.is_ok(resp):
+                    st.session_state["last_inference"] = resp
+                    st.session_state["last_inference_pid"] = pid
+                    st.session_state["last_inference_modality"] = code
+                else:
+                    show_api_error(resp)
+            inference = st.session_state.get("last_inference")
+            if (inference and st.session_state.get("last_inference_pid") == pid
+                    and st.session_state.get("last_inference_modality") == code):
+                render_results(inference, disease_label)
+            else:
+                st.info(f"Run the model to see this patient's {disease_label} risk.")
+
+        # ---------------- 5 · Consultation -----------------------------------------
+        with st.container(border=True):
+            st.markdown("#### 5 · Consultation")
+            st.caption("Saving closes the patient's queue ticket.")
+            with st.form(f"cons_form_{pid}"):
+                cons_dir = st.text_area("Directives*", key=f"cons_dir_{pid}", height=90)
+                cons_notes = st.text_area("Notes (optional, up to 5000 characters)", key=f"cons_notes_{pid}",
+                                          max_chars=5000, height=70)
+                if st.form_submit_button("Save consultation"):
+                    try:
+                        body = L.build_consultation_payload(pid, cons_dir, cons_notes)
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        resp = docpage_api.save_consultation(pid, body["directives"], body["notes"])
+                        if L.is_ok(resp):
+                            closed = " The queue ticket is closed." if resp.get("queue_ticket_closed") else ""
+                            flash("success", f"Consultation {resp.get('consultation_uid')} saved.{closed}")
+                            st.rerun()
+                        show_api_error(resp)
+            cons_resp = docpage_api.get_consultations(pid)
+            history = (cons_resp or {}).get("consultations") or [] if L.is_ok(cons_resp) else []
+            with st.expander(f"Consultation history ({len(history)})"):
+                if not L.is_ok(cons_resp):
+                    show_api_error(cons_resp)
+                for c in history:
+                    st.markdown(f"**{c.get('created_at', '')}** · `{c.get('consultation_uid', '')}`")
+                    st.write(c.get("directives"))
+                    if c.get("notes"):
+                        st.caption(c["notes"])
+
+        # ---------------- 6 · Sign the encounter ------------------------------------
+        with st.container(border=True):
+            st.markdown("#### 6 · Prescribe Treatment & Sign the Encounter")
+            st.caption("The server seals the whole record (care plan included) and links it to the baseline itself.")
+            inference = st.session_state.get("last_inference")
+            blockers = L.commit_blockers(phase, inference, st.session_state.get("last_inference_pid"), pid)
+            for reason in blockers:
+                st.info(reason)
+            with st.form(f"care_plan_form_{pid}"):
+                cp_dir = st.text_area("Clinical directive & orders*", key=f"cp_dir_{pid}", height=100)
+                cp_rx = st.text_input("Prescribed medications (comma-separated)", key=f"cp_rx_{pid}")
+                cp_life = st.text_area("Lifestyle advice (optional)", key=f"cp_life_{pid}", height=70)
+                if phase is not None:
+                    st.caption(f"Will be saved as a {L.encounter_type_for(phase)} encounter.")
+                if st.form_submit_button("Sign & Finalize Clinical Encounter", type="primary", disabled=bool(blockers)):
+                    if not (cp_dir or "").strip():
+                        st.error("Write the clinical directive before signing.")
+                    else:
+                        summary = L.summarize_inference(inference)
+                        care_plan = L.build_care_plan(
+                            cp_dir, cp_rx, cp_life, tier=summary["tier"],
+                            condition=L.MODALITY_LABELS.get(st.session_state.get("last_inference_modality")))
+                        resp = docpage_api.commit_encounter(pid, L.build_commit_payload(pid, phase, inference, care_plan))
+                        if L.is_ok(resp):
+                            receipt = L.strip_meta(resp)
+                            st.session_state["last_commit_receipt"] = receipt
+                            st.session_state["last_commit_pid"] = pid
+                            st.session_state["last_inference"] = None
+                            append_audit("ENCOUNTER_COMMITTED", receipt)
+                            flash("success", f"Encounter {receipt.get('encounter_id')} sealed.")
+                            st.rerun()
+                        show_api_error(resp)
+
+            receipt = st.session_state.get("last_commit_receipt")
+            if receipt and st.session_state.get("last_commit_pid") == pid:
+                st.markdown("##### 🔒 Sealed encounter receipt")
+                st.json(receipt)
+                if st.button("Check seal", key="seal_check_btn"):
+                    check = docpage_api.verify_encounter(receipt.get("encounter_id"))
+                    if not L.is_ok(check):
+                        show_api_error(check)
+                    elif check.get("seal_valid"):
+                        st.success("Seal valid: the stored record matches what was signed.")
+                    else:
+                        st.error("Seal check failed: the stored record was changed after signing.")
+
     with tab_cdss:
         st.write("")
-        
-        # FIXED: Ensure default patient exists to prevent "--" PID string crash
-        if "active_patient" not in st.session_state or st.session_state.active_patient is None:
-            st.session_state.active_patient = {
-                "id": 1, "name": "Eleanor Vance", "age": 52, "sex": "Female",
-                "bmi": 27.2, "resting_hr": 74, "latest_bp": "138/88"
-            }
-        
-        active_pat = st.session_state.active_patient
-        pid = active_pat.get("id", 1)
-        safe_pid = int(pid) if str(pid).isdigit() else 1
-        
-        # Phase Resolution via API Backend
-        baseline_response = docpage_api.get_baseline(safe_pid)
-        has_baseline = baseline_response is not None and baseline_response.get("has_baseline", False)
-        baseline_record = baseline_response if has_baseline else {}
-            
-        cdss_phase = 2 if has_baseline else 1
-
-        phase_color_bg = "#e0f2fe" if cdss_phase == 1 else "#ede9fe"
-        phase_color_border = "#0284c7" if cdss_phase == 1 else "#7c3aed"
-        phase_title = "Phase 1 · Clinical Onboarding & Baseline Anchor" if cdss_phase == 1 else "Phase 2 · Return Encounter & Trajectory Analysis"
-        phase_desc = "Establishing immutable patient baseline and initial risk stratification." if cdss_phase == 1 else "Longitudinal evaluation comparing current biomarkers against established baseline."
-        
-        banner_html = textwrap.dedent(f"""
-            <div style="padding: 15px; border-radius: 8px; background: {phase_color_bg}; border-left: 5px solid {phase_color_border}; margin-bottom: 20px;">
-                <h4 style="margin: 0; color: #0f172a;">{phase_title}</h4>
-                <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #475569;">{phase_desc}</p>
-            </div>
-        """)
-        st.markdown(banner_html, unsafe_allow_html=True)
-
-        # FIXED: Dynamic Patient Selector UI
+        notice = st.session_state.pop("cdss_notice", None)
+        if notice:
+            st.success(notice)
+        show_flash()
         with st.container(border=True):
-            col_pinfo, col_pselect = st.columns([3, 1])
-            with col_pselect:
-                selected_pid = st.number_input("Patient ID #", min_value=1, max_value=9999, value=safe_pid, step=1, key="consult_pid_input")
-                if selected_pid != safe_pid:
-                    st.session_state.active_patient = {
-                        "id": selected_pid, "name": f"Patient #{selected_pid}", "age": 52, "sex": "Female",
-                        "bmi": 27.2, "resting_hr": 74, "latest_bp": "138/88"
-                    }
-                    st.session_state["ai_inference_completed"] = False
-                    st.session_state["cdss_inference_payload"] = None
+            col_info, col_pick = st.columns([3, 1])
+            with col_pick:
+                st.session_state.setdefault("consult_pid_input", int(st.session_state["active_patient_id"] or 1))
+                typed_pid = st.number_input("Patient ID #", min_value=1, step=1, key="consult_pid_input")
+                if st.button("Open patient", key="open_pid_btn", use_container_width=True):
+                    open_patient(typed_pid)
                     st.rerun()
-            with col_pinfo:
-                st.markdown(f"### Active Consultation: **{active_pat.get('name', 'Patient Record')}** (`PID-{safe_pid}`)")
-                st.caption(f"Age: {active_pat.get('age', 52)} | Sex: {active_pat.get('sex', 'Female')} | Recorded BP: {active_pat.get('latest_bp', '138/88')}")
-
-        st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
-
-        modality_labels = [
-            "Cardiovascular Diseases (Hypertension / CVD)",
-            "Type 2 Diabetes Mellitus",
-            "Chronic Respiratory Diseases (COPD & Asthma)",
-            "Mental Health & Neurological Disorders"
-        ]
-        
-        selected_modality_label = st.selectbox(
-            "Clinical Evaluation Modality Architecture*",
-            options=modality_labels,
-            index=modality_labels.index(st.session_state.active_modality) if st.session_state.active_modality in modality_labels else 0,
-            key="cdss_active_modality_selector",
-            on_change=_sync_from_tab3
-        )
-
-        modality_dispatch = {
-            "Cardiovascular Diseases (Hypertension / CVD)": ("cardiovascular", "MULTI_MODAL"),
-            "Type 2 Diabetes Mellitus": ("diabetes", "MULTI_MODAL"),
-            "Chronic Respiratory Diseases (COPD & Asthma)": ("copd_asthma", "MULTI_MODAL"),
-            "Mental Health & Neurological Disorders": ("mental_health_neuro", "MULTI_MODAL")
-        }
-        modality_key, modality_schema_name = modality_dispatch[selected_modality_label]
-
-        # ======================================================================
-        # FHRS & ENVIRONMENTAL INTAKE
-        # ======================================================================
-        declare_change = False
-        if cdss_phase == 2:
-            declare_change = st.toggle("Familial pedigree changed since baseline?", key=f"declare_change_toggle_{safe_pid}")
-
-        if cdss_phase == 1 or declare_change:
-            with st.container(border=True):
-                st.markdown("#### 🧬 Epidemiological Familial Risk Stratification (FHRS)")
-                def _sync_fhrs_from_editor():
-                    ed_key = f"fhrs_editor_{safe_pid}"
-                    if ed_key in st.session_state:
-                        st.session_state.fhrs_data = st.session_state[ed_key]
-
-                st.data_editor(
-                    st.session_state.fhrs_data,
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    key=f"fhrs_editor_{safe_pid}",
-                    on_change=_sync_fhrs_from_editor,
-                    column_config={
-                        "Disease Category": st.column_config.SelectboxColumn("Disease Category", options=["Cardiovascular", "Type 2 Diabetes", "Respiratory", "Neuropsychiatric"], required=True),
-                        "Relative Relationship": st.column_config.SelectboxColumn("Relative Relationship", options=["Tier 1", "Tier 2", "Tier 3"], required=True),
-                        "Age of Onset": st.column_config.SelectboxColumn("Age of Onset", options=["Very Early", "Early", "Standard", "Late"], required=True)
-                    }
-                )
+        active_pid = st.session_state.get("active_patient_id")
+        if active_pid is None:
+            with col_info:
+                st.info("Call a patient from the queue, or type a patient ID and press Open patient.")
         else:
-            st.info("🔒 **Cached Biological Baseline Active:** Family history locked to prior backend encounter.")
-
-        with st.container(border=True):
-            st.markdown("##### 🌍 Dynamic Environmental Intake")
-            selected_env = st.multiselect(
-                "Current Modifiable Exposures", 
-                options=["High-Sodium Diet", "Household Smoking", "Sedentary Lifestyle", "High-Sugar Diet", "Occupational Dust/Fumes", "Chronic Household Stress"],
-                default=st.session_state.env_factors,
-                key="dynamic_env_input"
-            )
-            st.session_state.env_factors = selected_env
-
-        st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
-
-        # ======================================================================
-        # PARAMETER INGESTION & INFERENCE CALL
-        # ======================================================================
-        with st.container(border=True):
-            with st.form(key=f"cdss_{modality_key}_form_{safe_pid}", clear_on_submit=False):
-                st.markdown(f"#### Parameter Ingestion — {selected_modality_label}")
-                st.caption("Physiological boundaries and strict type-constraints enforced.")
-                
-                payload_buffer = {}
-
-                # FIXED: Added default 'value' overrides so empty fields don't send empty payloads
-                if modality_key == "cardiovascular":
-                    with st.expander("🩺 Hemodynamics & Anthropometrics", expanded=True):
-                        payload_buffer["age"] = st.number_input("Age (18-90 Years)", min_value=18, max_value=90, value=None, step=1)
-                        payload_buffer["biological_sex"] = st.selectbox("Biological Sex", options=["Female", "Male"], index=None)
-                        payload_buffer["systolic_bp"] = st.number_input("Systolic Blood Pressure (70-220 mmHg)", min_value=70.0, max_value=220.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["diastolic_bp"] = st.number_input("Diastolic Blood Pressure (40-130 mmHg)", min_value=40.0, max_value=130.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["resting_hr"] = st.number_input("Heart Rate (Resting) (40-180 bpm)", min_value=40, max_value=180, value=None, step=1)
-                        payload_buffer["bmi"] = st.number_input("Body Mass Index (12.0-60.0 kg/m²)", min_value=12.0, max_value=60.0, value=None, step=0.1, format="%.1f")
-                        
-                    with st.expander("🧪 Serum Lipid, Inflammatory & Renal Panels", expanded=False):
-                        payload_buffer["total_cholesterol"] = st.number_input("Total Cholesterol (100-400 mg/dL)", min_value=100.0, max_value=400.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["hdl"] = st.number_input("High-Density Lipoprotein (HDL) (15-120 mg/dL)", min_value=15.0, max_value=120.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["ldl"] = st.number_input("Low-Density Lipoprotein (LDL) (30-300 mg/dL)", min_value=30.0, max_value=300.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["triglycerides"] = st.number_input("Serum Triglycerides (40-1000 mg/dL)", min_value=40.0, max_value=1000.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["hs_crp"] = st.number_input("hs-CRP (0.1-50.0 mg/L)", min_value=0.1, max_value=50.0, value=None, step=0.1, format="%.1f")
-                        payload_buffer["serum_creatinine"] = st.number_input("Serum Creatinine (0.4-10.0 mg/dL)", min_value=0.4, max_value=10.0, value=None, step=0.01, format="%.2f")
-                        payload_buffer["egfr"] = st.number_input("eGFR (5-140 mL/min/1.73m²)", min_value=5.0, max_value=140.0, value=None, step=1.0, format="%.1f")
-                        
-                    with st.expander("🫀 Cardiac Necrosis & Hemodynamics", expanded=False):
-                        payload_buffer["lvef"] = st.number_input("LVEF (15-75 %)", min_value=15.0, max_value=75.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["ctni"] = st.number_input("Cardiac Troponin I (0.01-50.0 ng/mL)", min_value=0.01, max_value=50.0, value=None, step=0.01, format="%.2f")
-                        payload_buffer["nt_probnp"] = st.number_input("NT-proBNP (10-35000 pg/mL)", min_value=10.0, max_value=35000.0, value=None, step=10.0, format="%.1f")
-                        
-                    with st.expander("🏃 Behavioral Risk Factors", expanded=False):
-                        payload_buffer["smoking_history"] = st.number_input("Smoking History (0-120 Pack-Years)", min_value=0.0, max_value=120.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["daily_sodium"] = st.number_input("Daily Sodium Intake (500-10000 mg/day)", min_value=500.0, max_value=10000.0, value=None, step=50.0, format="%.1f")
-                        payload_buffer["physical_activity"] = st.number_input("Physical Activity Level (0-1050 mins/week)", min_value=0, max_value=1050, value=None, step=15)
-                        
-                elif modality_key == "diabetes":
-                    with st.expander("🩸 Glycemic Status & Endocrine Regulation", expanded=True):
-                        payload_buffer["fasting_glucose"] = st.number_input("Fasting Plasma Glucose (FPG) (50-450 mg/dL)", min_value=50.0, max_value=450.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["postprandial_glucose_2h"] = st.number_input("2-Hour Postprandial Glucose (2h-PG) (60-600 mg/dL)", min_value=60.0, max_value=600.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["hba1c"] = st.number_input("Glycated Hemoglobin (HbA1c) (4.0-15.0 %)", min_value=4.0, max_value=15.0, value=None, step=0.1, format="%.1f")
-                        payload_buffer["fasting_insulin"] = st.number_input("Fasting Serum Insulin (1.0-100.0 µIU/mL)", min_value=1.0, max_value=100.0, value=None, step=0.5, format="%.1f")
-                        payload_buffer["c_peptide"] = st.number_input("Serum C-Peptide Level (0.1-12.0 ng/mL)", min_value=0.1, max_value=12.0, value=None, step=0.1, format="%.1f")
-                        payload_buffer["homa_ir"] = st.number_input("HOMA-IR Score (0.2-25.0)", min_value=0.2, max_value=25.0, value=None, step=0.1, format="%.2f")
-                        
-                    with st.expander("📏 Anthropometrics & Central Adiposity", expanded=False):
-                        payload_buffer["bmi"] = st.number_input("Body Mass Index (12.0-60.0 kg/m²)", min_value=12.0, max_value=60.0, value=None, step=0.1, format="%.1f")
-                        payload_buffer["waist_circumference"] = st.number_input("Waist Circumference (50-160 cm)", min_value=50.0, max_value=160.0, value=None, step=0.5, format="%.1f")
-                        payload_buffer["whr"] = st.number_input("Waist-to-Hip Ratio (0.60-1.40)", min_value=0.60, max_value=1.40, value=None, step=0.01, format="%.2f")
-                        
-                    with st.expander("🧪 Hemodynamics, Renal & Metabolic Markers", expanded=False):
-                        payload_buffer["systolic_bp"] = st.number_input("Systolic Blood Pressure (70-220 mmHg)", min_value=70.0, max_value=220.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["diastolic_bp"] = st.number_input("Diastolic Blood Pressure (40-130 mmHg)", min_value=40.0, max_value=130.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["triglycerides"] = st.number_input("Serum Triglycerides (40-1000 mg/dL)", min_value=40.0, max_value=1000.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["hdl"] = st.number_input("High-Density Lipoprotein (HDL) (15-120 mg/dL)", min_value=15.0, max_value=120.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["uacr"] = st.number_input("Urine Albumin-to-Creatinine Ratio (UACR) (1-3500 mg/g)", min_value=1.0, max_value=3500.0, value=None, step=1.0, format="%.1f")
-                        payload_buffer["serum_uric_acid"] = st.number_input("Serum Uric Acid (1.5-14.0 mg/dL)", min_value=1.5, max_value=14.0, value=None, step=0.1, format="%.1f")
-                        
-                    with st.expander("🧬 Lineage, Clinical Presentation & Lifestyle", expanded=False):
-                        payload_buffer["gestational_diabetes"] = st.selectbox("Gestational Diabetes History", options=[0, 1], index=None)
-                        payload_buffer["acanthosis_nigricans"] = st.selectbox("Acanthosis Nigricans Presence", options=[0, 1], index=None)
-                        payload_buffer["daily_carbs"] = st.number_input("Daily Carbohydrate Intake (50-600 g/day)", min_value=50.0, max_value=600.0, value=None, step=5.0, format="%.1f")
-                        payload_buffer["sedentary_duration"] = st.number_input("Sedentary Behavior Duration (1.0-18.0 Hours/day)", min_value=1.0, max_value=18.0, value=None, step=0.5, format="%.1f")
-                else:
-                    with st.expander("🫁 General Parameter Ingestion", expanded=True):
-                        payload_buffer["systolic_bp"] = st.number_input("Systolic Blood Pressure (mmHg)", min_value=70.0, max_value=220.0, value=None, step=1.0)
-                        payload_buffer["hba1c"] = st.number_input("HbA1c (%)", min_value=4.0, max_value=15.0, value=None, step=0.1)
-                st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-                submit_inference = st.form_submit_button("🧠 Run AI Diagnostic Inference", type="primary", use_container_width=True)
-
-                if submit_inference:
-                    relatives_list = []
-                    for _, row in st.session_state.fhrs_data.iterrows():
-                        relatives_list.append({
-                            "condition": "CVD" if row.get("Disease Category") == "Cardiovascular" else "T2D",
-                            "relationship_tier": row.get("Relative Relationship", "Tier 1"),
-                            "onset_age": 50 if row.get("Age of Onset") == "Early" else 70
-                        })
-
-                    # FIXED: Using safe_pid consistently
-                    infer_payload = {
-                        "patient_id": safe_pid,
-                        "modality": modality_schema_name,
-                        "baseline_hash": baseline_record.get("baseline_hash") if cdss_phase == 2 else None,
-                        "biomarker_payload": {k: v for k, v in payload_buffer.items() if v is not None},
-                        "fhrs_input": {
-                            "pedigree_changed": declare_change,
-                            "pedigree_relatives": relatives_list
-                        },
-                        "environmental_factors": {
-                            "smoking_status": "CURRENT" if "Household Smoking" in st.session_state.env_factors else "NEVER",
-                            "chronic_stress_index": 0.8 if "Chronic Household Stress" in st.session_state.env_factors else 0.2
-                        },
-                        "patient_metadata": {
-                            "age": active_pat.get("age", 45),
-                            "sex": active_pat.get("sex", "UNKNOWN")
-                        }
-                    }
-
-                    api_response = docpage_api.infer_cdss(infer_payload)
-                    
-                    if api_response and api_response.get("status") == "success":
-                        st.session_state["cdss_inference_payload"] = api_response
-                        st.session_state["ai_inference_completed"] = True
-                        
-                        if cdss_phase == 2 and api_response.get("proposed_reanchor", {}).get("eligible", False):
-                            st.session_state["proposed_baseline"] = api_response
-                        else:
-                            st.session_state["proposed_baseline"] = None
-                            
-                        st.success("Inference executed securely via API.")
-                        time.sleep(0.5)
-                        st.rerun()
-                    else:
-                        st.error("Inference failed. Check backend logs.")
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # ======================================================================
-            # BACKEND JSON RENDERER (Risk, Trajectory, SHAP)
-            # ======================================================================
-            with st.container(border=True):
-                st.markdown(textwrap.dedent("""
-                    <div style="margin-bottom: 12px;">
-                        <h3 style="margin: 0; font-size: 1.35rem; font-weight: 700;">Diagnostic Risk Assessment</h3>
-                    </div>
-                """), unsafe_allow_html=True)
-                
-                payload = st.session_state.get("cdss_inference_payload") or {}
-                if not st.session_state.get("ai_inference_completed") or not payload:
-                    st.info("Submit clinical parameters to execute diagnostics.")
-                else:
-                    with st.expander("📦 API Gateway Receipt (POST /api/v1/predictions/infer)", expanded=False):
-                        st.json(payload, expanded=True)
-
-                    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-                    
-                    risk_data = payload.get("risk") or payload.get("risk_assessment", {})
-                    composite_tier = risk_data.get("tier") or risk_data.get("composite_tier", "MODERATE")
-                    domains = risk_data.get("domains", {})
-                    
-                    primary_domain_key = "cvd" if modality_key == "cardiovascular" else ("t2d" if modality_key == "diabetes" else "respiratory")
-                    primary_domain = domains.get(primary_domain_key, domains.get("cvd", {}))
-                    
-                    raw_score = float(primary_domain.get("score", 50.0))
-                    score = raw_score if raw_score > 1.0 else raw_score * 100.0
-                    tier = primary_domain.get("tier", composite_tier)
-                    tier_color = "#ef4444" if tier == "HIGH" else ("#f59e0b" if tier == "MODERATE" else "#10b981")
-                    
-                    st.markdown(f"<div style='text-align: center; font-size: 0.88rem; font-weight: 600; padding: 6px 12px; background: rgba(239, 68, 68, 0.08); border-radius: 8px; color: {tier_color}; margin-bottom: 16px;'>Primary Indication: Phase {cdss_phase} Evaluation</div>", unsafe_allow_html=True)
-                    
-                    if cdss_phase == 2 and "biomarker_deltas" in payload:
-                        st.markdown("##### 📉 Longitudinal Biomarker Trajectory")
-                        deltas_data = payload.get("biomarker_deltas", {}).get("metrics", {})
-                        if deltas_data:
-                            delta_cols = st.columns(3)
-                            for d_idx, (k, metric_obj) in enumerate(deltas_data.items()):
-                                delta_val = metric_obj.get("delta", 0.0)
-                                unit = metric_obj.get("unit", "")
-                                with delta_cols[d_idx % 3]:
-                                    st.metric(label=f"{k.upper()}", value=f"{metric_obj.get('velocity_per_year', 0.0)}/yr", delta=f"{delta_val:+.1f} {unit}")
-                            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-
-                    col_gauge, col_chart = st.columns([1, 1.5])
-                    with col_gauge:
-                        fig_gauge = go.Figure(go.Indicator(
-                            mode="gauge+number",
-                            value=score,
-                            number={"suffix": "%", "font": {"size": 42, "color": tier_color}},
-                            title={"text": f"<b style='color:{tier_color}; font-size:17px;'>{tier} RISK</b>", "font": {"size": 15}},
-                            gauge={"axis": {"range": [0, 100]}, "bar": {"color": tier_color}}
-                        ))
-                        fig_gauge.update_layout(height=260, margin=dict(l=20, r=20, t=40, b=10))
-                        st.plotly_chart(fig_gauge, use_container_width=True, config={"displayModeBar": False})
-
-                    with col_chart:
-                        st.markdown("##### TreeSHAP Feature Attributions")
-                        shap_data = payload.get("shap") or payload.get("shap_explanations", {})
-                        drivers = shap_data.get("drivers") or shap_data.get("top_risk_drivers", [])
-                        if not drivers:
-                            drivers = [{"display_name": "Nominal Baseline Vectors", "shap_value": 0.12}]
-                            
-                        features = [d.get("display_name", "Feature") for d in reversed(drivers)]
-                        impacts = [abs(float(d.get("shap_value", 0.0))) * 100.0 for d in reversed(drivers)]
-                        
-                        fig_bar = go.Figure(go.Bar(x=impacts, y=features, orientation="h", marker=dict(color="#ef4444"), text=[f"{val:.1f}%" for val in impacts], textposition="outside"))
-                        fig_bar.update_layout(height=260, margin=dict(l=10, r=40, t=10, b=10))
-                        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
-
-                    if payload.get("proposed_reanchor", {}).get("eligible", False):
-                        st.markdown("#### ⚖️ Physician Re-Anchor Gate")
-                        st.warning("⚠️ **Familial Pedigree Change Detected:** The model proposes establishing a new Clinical Baseline Anchor.")
-                        
-                        reanchor_decision = st.radio("Decision:", ["Pending", "Approve New Baseline Anchor", "Retain Prior Anchor"], horizontal=True, key="reanchor_radio")
-                        st.session_state["reanchor_decision"] = reanchor_decision
-
-                    st.markdown("##### ⚖️ Algorithmic Fairness & Calibration")
-                    calib = payload.get("calibration", {})
-                    if calib:
-                        st.caption(f"**Model Confidence:** {calib.get('confidence', '--')}% | **Brier Score:** {calib.get('brier_score', '--')}")
-                    fairness = payload.get("fairness") or payload.get("fairness_audit", {})
-                    if fairness.get("disparity_detected", False):
-                        st.error(f"⚠️ **Disparity Alert:** {fairness.get('subgroup_flags', [{}])[0].get('description', 'Variance detected.')}")
-                    else:
-                        st.success("✔ **Fairness Audit Passed:** Subgroup parity within limits.")
-
-            
-                # Render persistent Cryptographic Seal Receipt across reruns
-                if st.session_state.get("last_commit_receipt"):
-                    receipt = st.session_state["last_commit_receipt"]
-                    st.success(f"Encounter securely committed! ID: {receipt.get('encounter_id')}")
-                    st.markdown("##### 🔒 Cryptographic Seal Receipt")
-                    st.json(receipt)
-
-            # --------------------------------------------------------------------------
-            # DOCTOR CARE PLAN & ATOMIC EHR COMMIT (docpage_api.py)
-            # --------------------------------------------------------------------------
-            with st.container(border=True):
-                st.markdown("#### ✍️ Prescribe Treatment & Update Patient Care Plan")
-                st.caption("Secured with atomic ACID transactions and 24-hour Idempotency control via backend.")
-                
-                form_disabled = bool(st.session_state.get("proposed_baseline") and st.session_state.get("reanchor_decision") == "Pending")
-                
-                with st.form(key=f"care_plan_form_{safe_pid}"):
-                    new_directive = st.text_area("Clinical Directive & Orders", value="", height=100, disabled=form_disabled)
-                    new_rx = st.text_input("Prescribed Medications (comma-separated)", value="", disabled=form_disabled)
-                    
-                    if st.form_submit_button("Sign & Finalize Clinical Encounter", type="primary", disabled=form_disabled):
-                        payload_safe = st.session_state.get("cdss_inference_payload") or {}
-                        
-                        if not new_directive or not new_rx:
-                            st.error("Please complete both fields before committing.")
-                        else:
-                            reanchor_choice = st.session_state.get("reanchor_decision", "Retain Prior Anchor")
-                            reanchor_status = "APPROVED" if reanchor_choice == "Approve New Baseline Anchor" else "REJECTED"
-
-                            # FIXED: Using safe_pid consistently
-                            commit_payload = {
-                                "patient_id": safe_pid,
-                                "encounter_type": "REANCHOR_BASELINE" if reanchor_status == "APPROVED" else ("TRAJECTORY" if cdss_phase == 2 else "BASELINE"),
-                                "cdss_payload_snapshot": payload_safe,
-                                "fhrs_data": {"relatives": [{"condition": "CVD" if row.get("Disease Category") == "Cardiovascular" else "T2D", "relationship_tier": row.get("Relative Relationship", "Tier 1"), "onset_age": 50 if row.get("Age of Onset") == "Early" else 70} for _, row in st.session_state.fhrs_data.iterrows()]},
-                                "care_plan": {
-                                    "clinical_directive": new_directive,
-                                    "medications": [med.strip() for med in new_rx.split(",") if med.strip()],
-                                    "lifestyle_directives": st.session_state.env_factors
-                                },
-                                "reanchor_decision": reanchor_status
-                            }
-
-                            commit_response = docpage_api.commit_encounter(safe_pid, commit_payload)
-
-                            if commit_response and commit_response.get("status") == "success":
-                                docpage_api.clear_idempotency_key(safe_pid)
-                                append_audit("EHR_COMMIT_ATOMIC", commit_response)
-                                st.session_state["last_commit_receipt"] = commit_response
-                                st.session_state["ai_inference_completed"] = False
-                                st.rerun()
-                            else:
-                                st.error("Commit failed or rejected by backend transaction block.")
+            render_workspace(int(active_pid), col_info)
 
 # ==============================================================================
-# 6. SIDEBAR / FOOTER (Audit Trail)
+# 5. SIDEBAR (this session's sealed encounters)
 # ==============================================================================
 with st.sidebar:
     st.markdown("### 🩺 Clinical Context")
-    st.markdown(f"**Doctor:** {active_doc['name']}, {active_doc['suffix']}")
+    st.markdown(f"**Doctor:** {active_doc['name']}")
     st.markdown("---")
-    if st.session_state.audit_trail:
-        st.markdown("### 📋 Recent Commits")
-        for audit in reversed(st.session_state.audit_trail[-5:]):
-            st.markdown(f"**{audit['audit_id']}** - {audit['timestamp_utc']}")
-            payload = audit['payload']
-            if 'cryptographic_hash' in payload:
-                st.caption(f"Hash: {payload['cryptographic_hash'][:10]}...")
-            else:
-                st.caption(f"Event: {audit['event_type']}")
+    if st.session_state["audit_trail"]:
+        st.markdown("### 📋 Encounters sealed this session")
+        for audit in reversed(st.session_state["audit_trail"][-5:]):
+            st.markdown(f"**{audit['payload'].get('encounter_id', audit['audit_id'])}** - {audit['timestamp_utc']}")
+            seal = audit["payload"].get("cryptographic_hash")
+            if seal:
+                st.caption(f"Seal: {str(seal)[:10]}...")
